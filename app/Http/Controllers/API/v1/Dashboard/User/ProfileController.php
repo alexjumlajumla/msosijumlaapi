@@ -139,28 +139,39 @@ info('this->userService->create($request->validated())',$result);
      * @param Request $request
      * @return JsonResponse
      */
-    public function fireBaseTokenUpdate(Request $request): JsonResponse
+    public function fireBaseTokenUpdate(Request $request)
     {
-        if (empty($request->input('firebase_token'))) {
-            return $this->onErrorResponse(['code' => ResponseError::ERROR_502, 'message' => 'token is empty']);
-        }
-
-        $user = User::firstWhere('uuid', auth('sanctum')->user()->uuid);
-
-        if (empty($user)) {
-            return $this->onErrorResponse([
-                'code'    => ResponseError::ERROR_404,
-                'message' => __('errors.' . ResponseError::ERROR_404, locale: $this->language)
-            ]);
-        }
-
-        $user->update([
-            'firebase_token' => [$request->input('firebase_token')]
+        $request->validate([
+            'firebase_token' => 'required|string|min:100|max:500'
         ]);
 
-        return $this->successResponse(
-            __('errors.' . ResponseError::RECORD_WAS_SUCCESSFULLY_UPDATED, locale: $this->language)
-        );
+        try {
+            $user = auth()->user();
+            
+            // Validate token format
+            if (!preg_match('/^[A-Za-z0-9\-_]+$/', $request->input('firebase_token'))) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Invalid token format'
+                ], 400);
+            }
+
+            // Update token
+            $user->update([
+                'firebase_token' => $request->input('firebase_token')
+            ]);
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Token updated successfully'
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('[FirebaseToken] Update failed: ' . $e->getMessage());
+            return response()->json([
+                'status' => false,
+                'message' => 'Failed to update token'
+            ], 500);
+        }
     }
 
     /**
