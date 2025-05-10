@@ -134,6 +134,13 @@ class CleanFirebaseTokens extends Command
                 
                 $this->info("Sending test notification to token: " . substr($token, 0, 20) . "...");
                 
+                // Format data values as strings for FCM
+                $data = [
+                    'type' => 'test',
+                    'timestamp' => (string)time(),
+                    'message' => 'Test message content'
+                ];
+                
                 $notification = [
                     'message' => [
                         'token' => $token,
@@ -141,17 +148,12 @@ class CleanFirebaseTokens extends Command
                             'title' => 'Test Notification',
                             'body' => 'This is a test notification from your app',
                         ],
-                        'data' => [
-                            'type' => 'test',
-                            'timestamp' => (string)time()
-                        ],
+                        'data' => $data,
                         'android' => [
                             'priority' => 'high',
                             'notification' => [
-                                'priority' => 'high',
                                 'sound' => 'default',
-                                'channel_id' => 'high_importance_channel',
-                                'default_sound' => true
+                                'channel_id' => 'high_importance_channel'
                             ]
                         ],
                         'apns' => [

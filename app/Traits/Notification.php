@@ -192,6 +192,19 @@ trait Notification
 			// Send to each token individually
 			foreach ($processedReceivers as $token) {
 				try {
+					// Convert all data values to strings for FCM
+					$formattedData = [];
+					if (is_array($data)) {
+						foreach ($data as $key => $value) {
+							if ($key === 'title' || $key === 'body') {
+								continue; // Skip these as they're part of notification
+							}
+							$formattedData[$key] = is_scalar($value) ? (string)$value : json_encode($value);
+						}
+					} else {
+						$formattedData['message'] = (string)$data;
+					}
+
 					$notification = [
 						'message' => [
 							'token' => $token, // Individual token, not array
@@ -199,16 +212,12 @@ trait Notification
 								'title' => $data['title'] ?? '',
 								'body' => $data['body'] ?? '',
 							],
-							'data' => is_array($data) ? $data : ['message' => (string)$data],
+							'data' => $formattedData,
 							'android' => [
 								'priority' => 'high',
 								'notification' => [
-									'priority' => 'high',
 									'sound' => 'default',
-									'channel_id' => 'high_importance_channel',
-									'default_sound' => true,
-									'default_vibrate_timings' => true,
-									'default_light_settings' => true
+									'channel_id' => 'high_importance_channel'
 								]
 							],
 							'apns' => [
