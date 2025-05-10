@@ -188,24 +188,20 @@ class LoginController extends Controller
         try {
             /** @var User $user */
             /** @var PersonalAccessToken $current */
-            $user           = auth('sanctum')->user();
-            $firebaseToken  = collect($user->firebase_token)
-                ->reject(fn($item) => (string)$item == (string)request('firebase_token') || empty($item))
-                ->toArray();
-
+            $user = auth('sanctum')->user();
+            
+            // Clear the firebase token on logout
             $user->update([
-                'firebase_token' => $firebaseToken
+                'firebase_token' => null
             ]);
 
-			try {
-				$token   = str_replace('Bearer ', '', request()->header('Authorization'));
-
-				$current = PersonalAccessToken::findToken($token);
-				$current->delete();
-
-			} catch (Throwable $e) {
-				$this->error($e);
-			}
+            try {
+                $token = str_replace('Bearer ', '', request()->header('Authorization'));
+                $current = PersonalAccessToken::findToken($token);
+                $current->delete();
+            } catch (Throwable $e) {
+                $this->error($e);
+            }
         } catch (Throwable $e) {
             $this->error($e);
         }

@@ -154,11 +154,8 @@ info('this->userService->create($request->validated())',$result);
             ]);
         }
 
-        $tokens   = is_array($user->firebase_token) ? $user->firebase_token : [$user->firebase_token];
-        $tokens[] = $request->input('firebase_token');
-
         $user->update([
-            'firebase_token' => collect($tokens)->reject(fn($item) => empty($item))->unique()->values()->toArray()
+            'firebase_token' => [$request->input('firebase_token')]
         ]);
 
         return $this->successResponse(

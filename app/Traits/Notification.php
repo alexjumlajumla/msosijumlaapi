@@ -133,8 +133,8 @@ trait Notification
 			if (empty($receivers)) {
 				return;
 			}
-	
-			\Log::info('11111 first data', [
+
+			\Log::info('[PushService] Notification Data', [
 				'receivers' => $receivers,
 				'title' => $title,
 				'message' => $message,
@@ -142,11 +142,11 @@ trait Notification
 				'userIds' => $userIds,
 				'firebaseTitle' => $firebaseTitle
 			]);
-	
+
 			$type = data_get($data, 'order.type');
-	
+
 			if (is_array($userIds) && count($userIds) > 0) {
-				\Log::info('22222222', [
+				\Log::info('[PushService] Storing Notification for Users', [
 					'userIds' => $userIds,
 					'type' => $type ?? data_get($data, 'type'),
 					'title' => $title,
@@ -154,30 +154,33 @@ trait Notification
 					'data' => $data
 				]);
 				(new PushNotificationService)->storeMany([
-					'type' 	=> $type ?? data_get($data, 'type'),
+					'type'  => $type ?? data_get($data, 'type'),
 					'title' => $title,
-					'body' 	=> $message,
-					'data' 	=> $data,
+					'body'  => $message,
+					'data'  => $data,
 					'sound' => 'default',
 				], $userIds);
 			}
-	
+
 			$url = "https://fcm.googleapis.com/v1/projects/{$this->projectId()}/messages:send";
-	
 			$token = $this->updateToken();
-	
-			\Log::info('[PushService 3333333', [
+
+			\Log::info('[PushService] Sending Notification to FCM', [
 				'url' => $url,
 				'token' => $token
 			]);
-	
+
 			$headers = [
 				'Authorization' => "Bearer $token",
 				'Content-Type'  => 'application/json'
 			];
-	
+
 			foreach ($receivers as $receiver) {
-				\Log::info('[PushService] inside for loop 44444', [
+				if (empty($receiver)) {
+					continue;
+				}
+
+				\Log::info('[PushService] Sending to receiver', [
 					'receiver' => $receiver,
 					'firebaseTitle' => $firebaseTitle ?? $title,
 					'message' => $message,
@@ -187,19 +190,18 @@ trait Notification
 						'type' => (string)($data['type'] ?? '')
 					]
 				]);
-	
-				// Store response from Firebase
-				$response = Http::withHeaders($headers)->post($url, [
+
+				Http::withHeaders($headers)->post($url, [
 					'message' => [
 						'token' => $receiver,
 						'notification' => [
 							'title' => $firebaseTitle ?? $title,
-							'body' 	=> $message,
+							'body'  => $message,
 						],
 						'data' => [
-							'id'     => (string)($data['id'] 	 ?? ''),
+							'id'     => (string)($data['id'] ?? ''),
 							'status' => (string)($data['status'] ?? ''),
-							'type'   => (string)($data['type'] 	 ?? '')
+							'type'   => (string)($data['type'] ?? '')
 						],
 						'android' => [
 							'notification' => [
@@ -215,15 +217,7 @@ trait Notification
 						]
 					]
 				]);
-	
-				// Log the response
-				\Log::info('[PushService] 5555555', [
-					'receiver' => $receiver,
-					'status' => $response->status(),
-					'body' => $response->body()
-				]);
 			}
-	
 		})->afterResponse();
 	}
 	
