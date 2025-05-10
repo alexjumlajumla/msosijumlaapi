@@ -156,15 +156,15 @@ trait Notification
 				}
 			}
 
-			// Get Firebase token
+			// Get Firebase auth token
 			try {
-				$token = $this->updateToken();
-				if (empty($token)) {
-					\Log::error('[PushService] Failed to get Firebase token');
+				$authToken = $this->updateToken();
+				if (empty($authToken)) {
+					\Log::error('[PushService] Failed to get Firebase auth token');
 					return;
 				}
 			} catch (\Exception $e) {
-				\Log::error('[PushService] Error getting Firebase token: ' . $e->getMessage());
+				\Log::error('[PushService] Error getting Firebase auth token: ' . $e->getMessage());
 				return;
 			}
 
@@ -227,7 +227,7 @@ trait Notification
 					];
 
 					$response = Http::withHeaders([
-						'Authorization' => 'Bearer ' . $token,
+						'Authorization' => 'Bearer ' . $authToken,
 						'Content-Type' => 'application/json',
 					])
 					->timeout(10)
@@ -255,7 +255,16 @@ trait Notification
 								'error' => $error
 							]);
 							
-							// TODO: Implement logic to remove invalid tokens from users table
+							// Try to find and remove the invalid token
+							try {
+								$user = \App\Models\User::where('firebase_token', $token)->first();
+								if ($user) {
+									$user->update(['firebase_token' => null]);
+									\Log::info("[PushService] Removed invalid token from user #{$user->id}");
+								}
+							} catch (\Exception $e) {
+								\Log::error('[PushService] Failed to remove invalid token: ' . $e->getMessage());
+							}
 						}
 					}
 				} catch (\Exception $e) {
@@ -362,10 +371,15 @@ trait Notification
 	public function newOrderNotification(Order $order): void
 	{
 		try {
+			\Log::info('[PushService] Starting new order notification for order #' . $order->id);
+			
 			// Get admin tokens
 			$adminFirebaseTokens = User::with(['roles' => fn($q) => $q->where('name', 'admin')])
 				->whereHas('roles', fn($q) => $q->where('name', 'admin'))
 				->whereNotNull('firebase_token')
+				->where('firebase_token', '!=', '')
+				->where('firebase_token', '!=', '[]')
+				->where('firebase_token', '!=', 'null')
 				->pluck('firebase_token', 'id')
 				->toArray();
 
@@ -375,68 +389,100 @@ trait Notification
 			])
 				->whereHas('shop', fn($q) => $q->where('id', $order->shop_id))
 				->whereNotNull('firebase_token')
+				->where('firebase_token', '!=', '')
+				->where('firebase_token', '!=', '[]')
+				->where('firebase_token', '!=', 'null')
 				->pluck('firebase_token', 'id')
 				->toArray();
 
 			$aTokens = [];
 			$sTokens = [];
+			$adminIds = [];
+			$sellerIds = [];
 
 			// Process admin tokens
 			foreach ($adminFirebaseTokens as $userId => $adminToken) {
 				if (is_array($adminToken)) {
-					$aTokens = array_merge($aTokens, array_filter($adminToken));
+					foreach ($adminToken as $token) {
+						if (!empty($token)) {
+							$aTokens[] = $token;
+							$adminIds[] = $userId;
+						}
+					}
 				} elseif (!empty($adminToken)) {
 					$aTokens[] = $adminToken;
+					$adminIds[] = $userId;
 				}
 			}
 
 			// Process seller tokens
 			foreach ($sellersFirebaseTokens as $userId => $sellerToken) {
 				if (is_array($sellerToken)) {
-					$sTokens = array_merge($sTokens, array_filter($sellerToken));
+					foreach ($sellerToken as $token) {
+						if (!empty($token)) {
+							$sTokens[] = $token;
+							$sellerIds[] = $userId;
+						}
+					}
 				} elseif (!empty($sellerToken)) {
 					$sTokens[] = $sellerToken;
+					$sellerIds[] = $userId;
 				}
 			}
 
 			$allTokens = array_values(array_unique(array_merge($aTokens, $sTokens)));
+			$allUserIds = array_unique(array_merge($adminIds, $sellerIds));
 			
-			\Log::info('[PushService] Sending order notification to admins and sellers', [
+			\Log::info('[PushService] Preparing order notification delivery', [
 				'order_id' => $order->id,
 				'admin_tokens_count' => count($aTokens),
 				'seller_tokens_count' => count($sTokens),
-				'total_tokens' => count($allTokens)
+				'total_tokens' => count($allTokens),
+				'total_users' => count($allUserIds)
 			]);
 
 			// Send notification to admins and sellers
 			if (!empty($allTokens)) {
 				$notificationData = $order->only(['id', 'status', 'delivery_type']);
-				$notificationData['type'] = PushNotification::NEW_ORDER;
+				$notificationData['type'] = 'new_order';
 				$notificationData['title'] = 'New Order #' . $order->id;
 				$notificationData['body'] = __('errors.' . ResponseError::NEW_ORDER, ['id' => $order->id], $this->language);
+				
+				\Log::info('[PushService] Sending admin/seller notification', [
+					'tokens' => count($allTokens),
+					'users' => count($allUserIds)
+				]);
 				
 				$this->sendNotification(
 					$allTokens,
 					$notificationData,
-					array_merge(array_keys($adminFirebaseTokens), array_keys($sellersFirebaseTokens))
+					$allUserIds
 				);
 			}
 
 			// Send notification to the user who placed the order
 			if ($order->user && !empty($order->user->firebase_token)) {
-				$userTokens = is_array($order->user->firebase_token) ? 
-					array_filter($order->user->firebase_token) : 
-					[$order->user->firebase_token];
+				$userTokens = [];
+				
+				if (is_array($order->user->firebase_token)) {
+					foreach ($order->user->firebase_token as $token) {
+						if (!empty($token)) {
+							$userTokens[] = $token;
+						}
+					}
+				} elseif (!empty($order->user->firebase_token)) {
+					$userTokens[] = $order->user->firebase_token;
+				}
 
 				if (!empty($userTokens)) {
-					\Log::info('[PushService] Sending order notification to user', [
+					\Log::info('[PushService] Sending user order notification', [
 						'order_id' => $order->id,
 						'user_id' => $order->user->id,
 						'tokens_count' => count($userTokens)
 					]);
 
 					$notificationData = $order->only(['id', 'status', 'delivery_type']);
-					$notificationData['type'] = PushNotification::NEW_ORDER;
+					$notificationData['type'] = 'new_order';
 					$notificationData['title'] = 'Order #' . $order->id;
 					$notificationData['body'] = __('Your order #:id has been received!', ['id' => $order->id], $this->language);
 					
@@ -447,6 +493,8 @@ trait Notification
 					);
 				}
 			}
+			
+			\Log::info('[PushService] Completed new order notification for order #' . $order->id);
 		} catch (\Throwable $e) {
 			\Log::error('[PushService] Error in newOrderNotification', [
 				'error' => $e->getMessage(),
