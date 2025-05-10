@@ -41,11 +41,15 @@ class CleanFirebaseTokens extends Command
             $this->info('Cleaning tokens with invalid format...');
             $invalidFormatCount = \App\Models\User::where('firebase_token', '!=', null)
                 ->where(function($query) {
-                    $query->whereRaw("firebase_token NOT REGEXP '^[A-Za-z0-9:_-]+$'")
+                    $query->whereRaw("firebase_token NOT REGEXP '^[A-Za-z0-9_-]+:APA91[A-Za-z0-9_-]{100,}$'")
                         ->orWhere('firebase_token', '')
                         ->orWhere('firebase_token', '[]')
                         ->orWhere('firebase_token', 'null')
-                        ->orWhereRaw('LENGTH(firebase_token) < 100');
+                        ->orWhereRaw('LENGTH(firebase_token) < 100')
+                        ->orWhereRaw('LENGTH(firebase_token) > 500')
+                        ->orWhere('firebase_token', 'LIKE', '% %') // Contains spaces
+                        ->orWhere('firebase_token', 'LIKE', '%\n%') // Contains newlines
+                        ->orWhere('firebase_token', 'LIKE', '%\r%'); // Contains carriage returns
                 })
                 ->update(['firebase_token' => null]);
             
@@ -55,6 +59,7 @@ class CleanFirebaseTokens extends Command
             $this->info('Cleaning duplicate tokens...');
             $duplicates = \App\Models\User::selectRaw('firebase_token, COUNT(*) as count')
                 ->whereNotNull('firebase_token')
+                ->where('firebase_token', '!=', '')
                 ->groupBy('firebase_token')
                 ->having('count', '>', 1)
                 ->get();
@@ -77,13 +82,22 @@ class CleanFirebaseTokens extends Command
             // Step 3: Test remaining tokens in batches
             $this->info('Testing remaining tokens...');
             $users = \App\Models\User::whereNotNull('firebase_token')
+                ->where('firebase_token', '!=', '')
                 ->select(['id', 'firebase_token'])
                 ->get();
 
             $invalidTokens = 0;
-            foreach ($users->chunk(100) as $chunk) {
+            $processedTokens = 0;
+            $totalTokens = $users->count();
+
+            foreach ($users->chunk(50) as $chunk) {
                 foreach ($chunk as $user) {
                     try {
+                        $processedTokens++;
+                        if ($processedTokens % 10 === 0) {
+                            $this->info("Progress: $processedTokens/$totalTokens tokens processed");
+                        }
+
                         $response = $this->testTokenValidity($user->firebase_token);
                         if (!$response->successful()) {
                             $error = $response->json()['error']['message'] ?? null;
@@ -94,22 +108,37 @@ class CleanFirebaseTokens extends Command
                             )) {
                                 $user->update(['firebase_token' => null]);
                                 $invalidTokens++;
+                                
+                                \Log::warning('[FirebaseTokenCleanup] Invalid token removed', [
+                                    'user_id' => $user->id,
+                                    'token_prefix' => substr($user->firebase_token, 0, 15) . '...',
+                                    'error' => $error
+                                ]);
                             }
                         }
+
+                        // Add a small delay to avoid rate limiting
+                        usleep(100000); // 100ms delay
                     } catch (\Exception $e) {
                         \Log::error('[FirebaseTokenCleanup] Error testing token: ' . $e->getMessage(), [
                             'user_id' => $user->id,
-                            'token_prefix' => substr($user->firebase_token, 0, 15) . '...'
+                            'token_prefix' => substr($user->firebase_token, 0, 15) . '...',
+                            'error' => $e->getMessage(),
+                            'trace' => $e->getTraceAsString()
                         ]);
                     }
                 }
             }
             $this->info("Cleaned $invalidTokens invalid tokens through testing");
+            $this->info("Total tokens processed: $processedTokens");
 
             $this->info('Firebase token cleanup completed successfully.');
             return 0;
         } catch (\Exception $e) {
             $this->error('Error cleaning Firebase tokens: ' . $e->getMessage());
+            \Log::error('[FirebaseTokenCleanup] Fatal error: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
             return 1;
         }
     }
@@ -271,6 +300,11 @@ class CleanFirebaseTokens extends Command
      */
     private function testTokenValidity(string $token)
     {
+        // Validate token format before testing
+        if (!preg_match('/^[A-Za-z0-9_-]+:APA91[A-Za-z0-9_-]{100,}$/', $token)) {
+            throw new \InvalidArgumentException('Invalid token format');
+        }
+
         // Get Firebase auth token
         $googleClient = new \Google\Client;
         $googleClient->setAuthConfig(storage_path('app/google-service-account.json'));
