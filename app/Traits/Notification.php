@@ -12,6 +12,7 @@ use Cache;
 use Google\Client;
 use Illuminate\Support\Facades\Http;
 use Log;
+use Illuminate\Support\Facades\DB;
 
 /**
  * App\Traits\Notification
@@ -122,21 +123,19 @@ trait Notification
 
 	public function sendNotification(
 		array   $receivers = [],
-		?string $message = '',
-		?string $title = null,
 		mixed   $data = [],
-		array   $userIds = [],
-		?string $firebaseTitle = '',
+		array   $userIds = []
 	): void
 	{
-		dispatch(function () use ($receivers, $message, $title, $data, $userIds, $firebaseTitle) {
+		dispatch(function () use ($receivers, $data, $userIds) {
 			if (empty($receivers)) {
 				\Log::error('[PushService] No receivers provided for notification');
 				return;
 			}
 
-			\Log::info('[PushService] Sending notification to ' . count($receivers) . ' receivers', [
-				'data' => $data,
+			\Log::info('[PushService] Preparing notification for ' . count($receivers) . ' receivers', [
+				'title' => $data['title'] ?? '',
+				'body' => $data['body'] ?? '',
 				'userIds' => $userIds
 			]);
 
@@ -144,8 +143,9 @@ trait Notification
 			if (!empty($userIds)) {
 				try {
 					foreach ($userIds as $userId) {
-						Notification::create([
+						PushNotification::create([
 							'user_id' => $userId,
+							'type' => $data['type'] ?? 'system',
 							'title' => $data['title'] ?? '',
 							'body' => $data['body'] ?? '',
 							'data' => $data
@@ -157,9 +157,14 @@ trait Notification
 			}
 
 			// Get Firebase token
-			$token = $this->updateToken();
-			if (empty($token)) {
-				\Log::error('[PushService] Failed to get Firebase token');
+			try {
+				$token = $this->updateToken();
+				if (empty($token)) {
+					\Log::error('[PushService] Failed to get Firebase token');
+					return;
+				}
+			} catch (\Exception $e) {
+				\Log::error('[PushService] Error getting Firebase token: ' . $e->getMessage());
 				return;
 			}
 
@@ -179,59 +184,94 @@ trait Notification
 				return;
 			}
 
-			\Log::info('[PushService] Sending to processed receivers', [
-				'count' => count($processedReceivers),
-				'first_token' => substr($processedReceivers[0], 0, 20) . '...'
-			]);
+			\Log::info('[PushService] Sending to ' . count($processedReceivers) . ' tokens');
 
-			$notification = [
-				'message' => [
-					'token' => $processedReceivers,
-					'notification' => [
-						'title' => $data['title'] ?? '',
-						'body' => $data['body'] ?? '',
-					],
-					'data' => $data,
-					'android' => [
-						'priority' => 'high',
-						'notification' => [
-							'priority' => 'high',
-							'sound' => 'default',
-							'default_sound' => true,
-							'default_vibrate_timings' => true,
-							'default_light_settings' => true
-						]
-					],
-					'apns' => [
-						'headers' => [
-							'apns-priority' => '10'
-						],
-						'payload' => [
-							'aps' => [
-								'sound' => 'default'
+			$successCount = 0;
+			$failureCount = 0;
+
+			// Send to each token individually
+			foreach ($processedReceivers as $token) {
+				try {
+					$notification = [
+						'message' => [
+							'token' => $token, // Individual token, not array
+							'notification' => [
+								'title' => $data['title'] ?? '',
+								'body' => $data['body'] ?? '',
+							],
+							'data' => is_array($data) ? $data : ['message' => (string)$data],
+							'android' => [
+								'priority' => 'high',
+								'notification' => [
+									'priority' => 'high',
+									'sound' => 'default',
+									'channel_id' => 'high_importance_channel',
+									'default_sound' => true,
+									'default_vibrate_timings' => true,
+									'default_light_settings' => true
+								]
+							],
+							'apns' => [
+								'headers' => [
+									'apns-priority' => '10'
+								],
+								'payload' => [
+									'aps' => [
+										'sound' => 'default',
+										'badge' => 1,
+										'content-available' => 1
+									]
+								]
 							]
 						]
-					]
-				]
-			];
+					];
 
-			$response = Http::withHeaders([
-				'Authorization' => 'Bearer ' . $token,
-				'Content-Type' => 'application/json',
-			])
-			->timeout(10)
-			->post('https://fcm.googleapis.com/v1/projects/' . config('firebase.project_id') . '/messages:send', $notification);
+					$response = Http::withHeaders([
+						'Authorization' => 'Bearer ' . $token,
+						'Content-Type' => 'application/json',
+					])
+					->timeout(10)
+					->post('https://fcm.googleapis.com/v1/projects/' . $this->projectId() . '/messages:send', $notification);
 
-			if ($response->successful()) {
-				\Log::info('[PushService] Notification sent successfully', [
-					'response' => $response->json()
-				]);
-			} else {
-				\Log::error('[PushService] Failed to send notification', [
-					'status' => $response->status(),
-					'response' => $response->json()
-				]);
+					if ($response->successful()) {
+						$successCount++;
+					} else {
+						$failureCount++;
+						\Log::error('[PushService] Failed to send notification to token', [
+							'token_prefix' => substr($token, 0, 15) . '...',
+							'status' => $response->status(),
+							'response' => $response->json()
+						]);
+						
+						// Handle specific FCM errors
+						$error = $response->json()['error']['message'] ?? null;
+						if ($error && (
+							strpos($error, 'InvalidRegistration') !== false ||
+							strpos($error, 'NotRegistered') !== false ||
+							strpos($error, 'MismatchSenderId') !== false
+						)) {
+							\Log::warning('[PushService] Invalid token detected, should be removed', [
+								'token_prefix' => substr($token, 0, 15) . '...',
+								'error' => $error
+							]);
+							
+							// TODO: Implement logic to remove invalid tokens from users table
+						}
+					}
+				} catch (\Exception $e) {
+					$failureCount++;
+					\Log::error('[PushService] Exception sending notification to token', [
+						'token_prefix' => substr($token, 0, 15) . '...',
+						'error' => $e->getMessage()
+					]);
+				}
 			}
+
+			\Log::info('[PushService] Notification sending complete', [
+				'success' => $successCount,
+				'failures' => $failureCount,
+				'total' => count($processedReceivers)
+			]);
 		})->afterResponse();
 	}
 	
@@ -342,7 +382,7 @@ trait Notification
 			$sTokens = [];
 
 			// Process admin tokens
-			foreach ($adminFirebaseTokens as $adminToken) {
+			foreach ($adminFirebaseTokens as $userId => $adminToken) {
 				if (is_array($adminToken)) {
 					$aTokens = array_merge($aTokens, array_filter($adminToken));
 				} elseif (!empty($adminToken)) {
@@ -351,7 +391,7 @@ trait Notification
 			}
 
 			// Process seller tokens
-			foreach ($sellersFirebaseTokens as $sellerToken) {
+			foreach ($sellersFirebaseTokens as $userId => $sellerToken) {
 				if (is_array($sellerToken)) {
 					$sTokens = array_merge($sTokens, array_filter($sellerToken));
 				} elseif (!empty($sellerToken)) {
@@ -370,11 +410,14 @@ trait Notification
 
 			// Send notification to admins and sellers
 			if (!empty($allTokens)) {
+				$notificationData = $order->only(['id', 'status', 'delivery_type']);
+				$notificationData['type'] = PushNotification::NEW_ORDER;
+				$notificationData['title'] = 'New Order #' . $order->id;
+				$notificationData['body'] = __('errors.' . ResponseError::NEW_ORDER, ['id' => $order->id], $this->language);
+				
 				$this->sendNotification(
 					$allTokens,
-					__('errors.' . ResponseError::NEW_ORDER, ['id' => $order->id], $this->language),
-					$order->id,
-					$order->setAttribute('type', PushNotification::NEW_ORDER)?->only(['id', 'status', 'delivery_type']),
+					$notificationData,
 					array_merge(array_keys($adminFirebaseTokens), array_keys($sellersFirebaseTokens))
 				);
 			}
@@ -392,11 +435,14 @@ trait Notification
 						'tokens_count' => count($userTokens)
 					]);
 
+					$notificationData = $order->only(['id', 'status', 'delivery_type']);
+					$notificationData['type'] = PushNotification::NEW_ORDER;
+					$notificationData['title'] = 'Order #' . $order->id;
+					$notificationData['body'] = __('Your order #:id has been received!', ['id' => $order->id], $this->language);
+					
 					$this->sendNotification(
 						$userTokens,
-						__('Your order #:id has been received!', ['id' => $order->id], $this->language),
-						'Order #' . $order->id,
-						$order->setAttribute('type', PushNotification::NEW_ORDER)?->only(['id', 'status', 'delivery_type']),
+						$notificationData,
 						[$order->user_id]
 					);
 				}
@@ -413,5 +459,79 @@ trait Notification
 	private function projectId()
 	{
 		return Settings::where('key', 'project_id')->value('value');
+	}
+
+	/**
+	 * Clean up invalid Firebase tokens
+	 * This can be called from a scheduled command
+	 */
+	public function cleanInvalidTokens(): void
+	{
+		try {
+			\Log::info('[PushService] Starting token cleanup');
+			
+			// Clear empty tokens
+			$emptyTokensCount = DB::table('users')
+				->where(function($query) {
+					$query->whereNull('firebase_token')
+						->orWhere('firebase_token', '')
+						->orWhere('firebase_token', '[]')
+						->orWhere('firebase_token', 'null');
+				})
+				->update(['firebase_token' => null]);
+			
+			\Log::info("[PushService] Cleared $emptyTokensCount empty tokens");
+			
+			// Find and fix any remaining array tokens
+			$arrayTokensCount = DB::table('users')
+				->whereRaw('firebase_token LIKE ?', ['[%'])
+				->update([
+					'firebase_token' => DB::raw('JSON_UNQUOTE(JSON_EXTRACT(firebase_token, "$[0]"))')
+				]);
+				
+			\Log::info("[PushService] Fixed $arrayTokensCount array tokens");
+			
+			// Check for duplicate tokens
+			$duplicateTokens = DB::table('users')
+				->select('firebase_token', DB::raw('COUNT(*) as count'))
+				->whereNotNull('firebase_token')
+				->groupBy('firebase_token')
+				->having('count', '>', 1)
+				->get();
+				
+			if ($duplicateTokens->count() > 0) {
+				\Log::warning('[PushService] Found duplicate tokens', [
+					'count' => $duplicateTokens->count(),
+					'tokens' => $duplicateTokens->pluck('count', 'firebase_token')->toArray()
+				]);
+				
+				// Keep only the most recently updated user with each token
+				foreach ($duplicateTokens as $duplicate) {
+					$token = $duplicate->firebase_token;
+					
+					// Get all users with this token except the most recently updated one
+					$usersToNullify = DB::table('users')
+						->where('firebase_token', $token)
+						->orderBy('updated_at', 'desc')
+						->skip(1) // Skip the most recent one
+						->take(100) // Limit to avoid large updates
+						->pluck('id');
+						
+					if ($usersToNullify->count() > 0) {
+						DB::table('users')
+							->whereIn('id', $usersToNullify)
+							->update(['firebase_token' => null]);
+							
+						\Log::info("[PushService] Cleared duplicate token from " . $usersToNullify->count() . " users");
+					}
+				}
+			}
+			
+			\Log::info('[PushService] Token cleanup completed successfully');
+		} catch (\Exception $e) {
+			\Log::error('[PushService] Error cleaning tokens: ' . $e->getMessage(), [
+				'trace' => $e->getTraceAsString()
+			]);
+		}
 	}
 }

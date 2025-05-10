@@ -26,6 +26,7 @@ class Kernel extends ConsoleKernel
 		$schedule->command('expired:subscription:remove')->everyMinute();
 //         $schedule->command('truncate:telescope')->daily();
 		$schedule->command('update:models:galleries')->hourly()->withoutOverlapping()->runInBackground();
+		$schedule->command('firebase:clean-tokens')->daily();
 	}
 
 	/**
