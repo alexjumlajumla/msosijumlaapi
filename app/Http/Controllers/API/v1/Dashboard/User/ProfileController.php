@@ -148,17 +148,42 @@ info('this->userService->create($request->validated())',$result);
         try {
             $user = auth()->user();
             
-            // Validate token format
-            if (!preg_match('/^[A-Za-z0-9\-_]+$/', $request->input('firebase_token'))) {
+            // Enhanced token validation
+            $token = $request->input('firebase_token');
+            
+            // Check for basic format (alphanumeric with some special chars)
+            if (!preg_match('/^[A-Za-z0-9:_-]+$/', $token)) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Invalid token format'
+                    'message' => 'Invalid token format. Token should only contain letters, numbers, colons, underscores and hyphens.'
                 ], 400);
+            }
+
+            // Check for Firebase token structure (should contain a colon)
+            if (!str_contains($token, ':')) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Invalid Firebase token structure'
+                ], 400);
+            }
+
+            // Check if token is an array and extract first valid token
+            if (is_array($token)) {
+                $token = collect($token)->first(function($t) {
+                    return is_string($t) && strlen($t) >= 100;
+                });
+                
+                if (!$token) {
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'No valid token found in array'
+                    ], 400);
+                }
             }
 
             // Update token
             $user->update([
-                'firebase_token' => $request->input('firebase_token')
+                'firebase_token' => $token
             ]);
 
             return response()->json([
@@ -166,7 +191,11 @@ info('this->userService->create($request->validated())',$result);
                 'message' => 'Token updated successfully'
             ]);
         } catch (\Exception $e) {
-            \Log::error('[FirebaseToken] Update failed: ' . $e->getMessage());
+            \Log::error('[FirebaseToken] Update failed: ' . $e->getMessage(), [
+                'user_id' => auth()->id(),
+                'token_prefix' => substr($request->input('firebase_token'), 0, 15) . '...'
+            ]);
+            
             return response()->json([
                 'status' => false,
                 'message' => 'Failed to update token'

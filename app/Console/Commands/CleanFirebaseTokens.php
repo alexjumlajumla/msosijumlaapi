@@ -37,7 +37,75 @@ class CleanFirebaseTokens extends Command
         $this->info('Starting Firebase token cleanup...');
         
         try {
-            $this->cleanInvalidTokens();
+            // Step 1: Clean invalid format tokens
+            $this->info('Cleaning tokens with invalid format...');
+            $invalidFormatCount = \App\Models\User::where('firebase_token', '!=', null)
+                ->where(function($query) {
+                    $query->whereRaw("firebase_token NOT REGEXP '^[A-Za-z0-9:_-]+$'")
+                        ->orWhere('firebase_token', '')
+                        ->orWhere('firebase_token', '[]')
+                        ->orWhere('firebase_token', 'null')
+                        ->orWhereRaw('LENGTH(firebase_token) < 100');
+                })
+                ->update(['firebase_token' => null]);
+            
+            $this->info("Cleaned $invalidFormatCount tokens with invalid format");
+
+            // Step 2: Clean duplicate tokens (keep only the most recent)
+            $this->info('Cleaning duplicate tokens...');
+            $duplicates = \App\Models\User::selectRaw('firebase_token, COUNT(*) as count')
+                ->whereNotNull('firebase_token')
+                ->groupBy('firebase_token')
+                ->having('count', '>', 1)
+                ->get();
+
+            $duplicatesCleaned = 0;
+            foreach ($duplicates as $duplicate) {
+                // Keep the most recently updated user's token
+                $users = \App\Models\User::where('firebase_token', $duplicate->firebase_token)
+                    ->orderBy('updated_at', 'desc')
+                    ->get();
+                
+                // Skip the first (most recent) user
+                foreach ($users->skip(1) as $user) {
+                    $user->update(['firebase_token' => null]);
+                    $duplicatesCleaned++;
+                }
+            }
+            $this->info("Cleaned $duplicatesCleaned duplicate tokens");
+
+            // Step 3: Test remaining tokens in batches
+            $this->info('Testing remaining tokens...');
+            $users = \App\Models\User::whereNotNull('firebase_token')
+                ->select(['id', 'firebase_token'])
+                ->get();
+
+            $invalidTokens = 0;
+            foreach ($users->chunk(100) as $chunk) {
+                foreach ($chunk as $user) {
+                    try {
+                        $response = $this->testTokenValidity($user->firebase_token);
+                        if (!$response->successful()) {
+                            $error = $response->json()['error']['message'] ?? null;
+                            if ($error && (
+                                str_contains($error, 'invalid') ||
+                                str_contains($error, 'not a valid FCM registration token') ||
+                                str_contains($error, 'INVALID_ARGUMENT')
+                            )) {
+                                $user->update(['firebase_token' => null]);
+                                $invalidTokens++;
+                            }
+                        }
+                    } catch (\Exception $e) {
+                        \Log::error('[FirebaseTokenCleanup] Error testing token: ' . $e->getMessage(), [
+                            'user_id' => $user->id,
+                            'token_prefix' => substr($user->firebase_token, 0, 15) . '...'
+                        ]);
+                    }
+                }
+            }
+            $this->info("Cleaned $invalidTokens invalid tokens through testing");
+
             $this->info('Firebase token cleanup completed successfully.');
             return 0;
         } catch (\Exception $e) {
@@ -196,5 +264,33 @@ class CleanFirebaseTokens extends Command
             $this->error("Error testing Firebase: " . $e->getMessage());
             return 1;
         }
+    }
+
+    /**
+     * Test if a token is valid with Firebase
+     */
+    private function testTokenValidity(string $token)
+    {
+        // Get Firebase auth token
+        $googleClient = new \Google\Client;
+        $googleClient->setAuthConfig(storage_path('app/google-service-account.json'));
+        $googleClient->addScope('https://www.googleapis.com/auth/firebase.messaging');
+        $authToken = $googleClient->fetchAccessTokenWithAssertion()['access_token'];
+
+        $projectId = $this->projectId();
+
+        // Send test notification
+        return \Illuminate\Support\Facades\Http::withHeaders([
+            'Authorization' => 'Bearer ' . $authToken,
+            'Content-Type' => 'application/json',
+        ])->post("https://fcm.googleapis.com/v1/projects/$projectId/messages:send", [
+            'message' => [
+                'token' => $token,
+                'data' => [
+                    'type' => 'test',
+                    'timestamp' => (string)time()
+                ]
+            ]
+        ]);
     }
 } 
