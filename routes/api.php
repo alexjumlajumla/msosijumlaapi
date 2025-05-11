@@ -1422,7 +1422,7 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
 			
 			
 			  /* Loans */
-            Route::apiResource('loans', Admin\LoanController::class)->only(['index']);
+            Route::apiResource('loans', Admin\LoanController::class)->only(['index','store','destroy']);
             Route::post('loans/disburse', [Admin\LoanController::class, 'disburse']);
             Route::post('loans/repayment', [Admin\LoanController::class, 'recordRepayment']);
             Route::get('loans/{userId}', [Admin\LoanController::class, 'getUserLoanBalance']);
