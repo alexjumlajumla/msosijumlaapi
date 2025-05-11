@@ -63,7 +63,7 @@ class VfdReceiptController extends AdminBaseController
      */
     public function index(Request $request): JsonResponse
     {
-        $receipts = VfdReceipt::query()
+        $receipts = VfdReceipt::with('model')
             ->when($request->type, fn($q) => $q->where('receipt_type', $request->type))
             ->when($request->status, fn($q) => $q->where('status', $request->status))
             ->when($request->date_from, fn($q) => $q->whereDate('created_at', '>=', $request->date_from))
@@ -94,7 +94,7 @@ class VfdReceiptController extends AdminBaseController
             'per_page' => 'nullable|integer|min:1|max:100'
         ]);
 
-        $query = VfdReceipt::query();
+        $query = VfdReceipt::with('model');
 
         if ($request->filled('receipt_number')) {
             $query->where('receipt_number', 'like', "%{$data['receipt_number']}%");
