@@ -7,6 +7,7 @@ use App\Models\LoanRepayment;
 use App\Services\LoanService\LoanService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Http\Resources\LoanRepaymentResource;
 
 class LoanRepaymentController extends AdminBaseController
 {
@@ -17,11 +18,13 @@ class LoanRepaymentController extends AdminBaseController
 
     public function index(Request $request): JsonResponse
     {
-        $repayments = LoanRepayment::with(['loan','user'])
-            ->orderBy($request->input('column','id'), $request->input('sort','desc'))
-            ->paginate($request->input('perPage',15));
+        $repayments = LoanRepayment::with(['loan', 'user'])
+            ->orderBy($request->input('column', 'id'), $request->input('sort', 'desc'))
+            ->paginate($request->input('perPage', 15));
 
-        return $this->successResponse(__('web.list_of_records_found'), $repayments);
+        // Return a standardized resource collection so that frontend receives
+        // { data: [...], meta: {...}, links: {...} } similar to other endpoints
+        return LoanRepaymentResource::collection($repayments);
     }
 
     public function store(Request $request): JsonResponse
