@@ -1493,6 +1493,23 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
             // ... existing admin routes ...
         });
     });
+
+    /* Loans routes inside dashboard/admin */
+    Route::group(['prefix' => 'dashboard/admin', 'middleware' => ['sanctum.check', 'role:admin']], function () {
+        // Loan CRUD
+        Route::apiResource('loans', Admin\LoanController::class)->only(['index','store','destroy']);
+        // Loan repayments
+        Route::apiResource('loan-repayments', Admin\LoanRepaymentController::class)->only(['index','store','destroy']);
+
+        // Loan analytics (hyphenated for frontend)
+        Route::group(['prefix' => 'loan-analytics'], function () {
+            Route::get('statistics', [Admin\LoanAnalyticsController::class, 'getStatistics']);
+            Route::get('disbursement-chart', [Admin\LoanAnalyticsController::class, 'getDisbursementChart']);
+            Route::get('repayment-chart', [Admin\LoanAnalyticsController::class, 'getRepaymentChart']);
+            Route::get('status-distribution', [Admin\LoanAnalyticsController::class, 'getStatusDistribution']);
+            Route::get('payment-methods', [Admin\LoanAnalyticsController::class, 'getPaymentMethodDistribution']);
+        });
+    });
 });
 
 if (file_exists(__DIR__ . '/booking.php')) {
