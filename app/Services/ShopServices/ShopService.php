@@ -13,6 +13,7 @@ use DB;
 use Exception;
 use Illuminate\Support\Facades\Cache;
 use Throwable;
+use App\Models\Settings;
 
 class ShopService extends CoreService implements ShopServiceInterface
 {
@@ -199,6 +200,34 @@ class ShopService extends CoreService implements ShopServiceInterface
             'type'	=> data_get($data, 'delivery_time_type', data_get($shop?->delivery_time, 'type', Shop::DELIVERY_TIME_MINUTE)),
         ];
 
+        // Get default delivery settings from admin
+        $defaultDeliverySettings = Settings::whereIn('key', [
+            'delivery_price',
+            'delivery_price_per_km',
+            'delivery_time_from',
+            'delivery_time_to',
+            'delivery_time_type'
+        ])->get()->pluck('value', 'key');
+
+        // Use admin settings for delivery if user is not admin
+        $isAdmin = auth('sanctum')->user()?->hasRole('admin');
+        
+        $price = $isAdmin ? 
+            data_get($data, 'price', $shop?->price ?? 0) : 
+            (float)data_get($defaultDeliverySettings, 'delivery_price', 0);
+
+        $pricePerKm = $isAdmin ? 
+            data_get($data, 'price_per_km', $shop?->price_per_km ?? 0) : 
+            (float)data_get($defaultDeliverySettings, 'delivery_price_per_km', 0);
+
+        if (!$isAdmin) {
+            $deliveryTime = [
+                'from' => data_get($defaultDeliverySettings, 'delivery_time_from', '0'),
+                'to'   => data_get($defaultDeliverySettings, 'delivery_time_to', '0'),
+                'type' => data_get($defaultDeliverySettings, 'delivery_time_type', Shop::DELIVERY_TIME_MINUTE),
+            ];
+        }
+
         return [
             'user_id'        => data_get($data, 'user_id', !auth('sanctum')->user()->hasRole('admin') ? auth('sanctum')->id() : null),
             'tax'            => data_get($data, 'tax', $shop?->tax),
@@ -213,8 +242,8 @@ class ShopService extends CoreService implements ShopServiceInterface
             'show_type'      => data_get($data, 'show_type', $shop?->show_type ?? 1),
             'visibility'     => !!$shop?->visibility,
             'status_note'    => data_get($data, 'status_note', $shop?->status_note ?? ''),
-            'price'          => data_get($data, 'price', $shop?->price ?? 0),
-            'price_per_km'   => data_get($data, 'price_per_km', $shop?->price_per_km ?? 0),
+            'price'          => $price,
+            'price_per_km'   => $pricePerKm,
             'verify'         => data_get($data, 'verify', $shop?->verify ?? 0),
             'wifi_password'  => data_get($data, 'wifi_password'),
             'wifi_name'      => data_get($data, 'wifi_name'),

@@ -17,14 +17,9 @@ class StoreRequest extends BaseRequest
      */
     public function rules(): array
     {
-        return [
-            'delivery_time_from'    => 'required|numeric',
-            'delivery_time_to'      => 'required|numeric',
-            'delivery_time_type'    => ['required', Rule::in(Shop::DELIVERY_TIME_TYPE)],
-            'price'                 => 'numeric|min:0',
-            'price_per_km'          => 'numeric|min:0',
-            'status'                => ['string',   Rule::in(Shop::STATUS)],
-            'active'                => ['numeric',  Rule::in(1,0)],
+        $isAdmin = auth('sanctum')->user()?->hasRole('admin');
+
+        $rules = [
             'title'                 => 'required|array',
             'title.*'               => 'required|string|min:2|max:191',
             'description'           => 'array',
@@ -62,5 +57,20 @@ class StoreRequest extends BaseRequest
                     ->whereNull('deleted_at')
             ]
         ];
+
+        // Add delivery validation rules only for admin
+        if ($isAdmin) {
+            $rules = array_merge($rules, [
+                'delivery_time_from'    => 'required|numeric',
+                'delivery_time_to'      => 'required|numeric',
+                'delivery_time_type'    => ['required', Rule::in(Shop::DELIVERY_TIME_TYPE)],
+                'price'                 => 'numeric|min:0',
+                'price_per_km'          => 'numeric|min:0',
+                'status'                => ['string', Rule::in(Shop::STATUS)],
+                'active'                => ['numeric', Rule::in(1,0)],
+            ]);
+        }
+
+        return $rules;
     }
 }

@@ -29,10 +29,10 @@ return new class extends Migration
             $table->double('min_amount', 12)->default(0.1);
             $table->enum('status', ['new', 'edited', 'approved', 'rejected', 'inactive'])->default('new');
             $table->text('status_note')->nullable();
-            $table->json('delivery_time');
-            $table->tinyInteger('type');
-            $table->double('price')->default(0);
-            $table->double('price_per_km')->default(0);
+            $table->json('delivery_time')->nullable();
+            $table->tinyInteger('type')->nullable();
+            $table->double('price')->default(0)->nullable();
+            $table->double('price_per_km')->default(0)->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
