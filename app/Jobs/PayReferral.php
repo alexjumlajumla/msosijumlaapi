@@ -22,17 +22,20 @@ class PayReferral implements ShouldQueue
 
     public ?User $user;
     public ?string $type;
+    public ?Order $order;
 
     /**
      * Create a new event instance.
      *
      * @param User|null $user
      * @param string $type
+     * @param Order|null $order
      */
-    public function __construct(?User $user, string $type)
+    public function __construct(?User $user, string $type, ?Order $order = null)
     {
         $this->user = $user;
         $this->type = $type;
+        $this->order = $order;
     }
 
 	/**
@@ -58,31 +61,28 @@ class PayReferral implements ShouldQueue
             return;
         }
 
-        $count = $this->user->orders()->where('status', Order::STATUS_DELIVERED)?->count() === 1;
-
-        if (!$count) {
-            return;
-        }
-
         $owner = User::where('my_referral', $this->user->referral)->first();
 
         if (!$owner) {
             return;
         }
 
-        $priceFrom = $referral->price_from;
-        $priceTo   = $referral->price_to;
+        // Check if conditions are met
+        if (!$referral->checkConditions($this->user, $this->order)) {
+            return;
+        }
+
+        // Calculate rewards
+        $priceFrom = $referral->calculateReward($owner, 'from', $this->order?->total_price);
+        $priceTo = $referral->calculateReward($this->user, 'to', $this->order?->total_price);
 
         if ($owner->my_referral !== $owner->referral || $this->user->my_referral !== $this->user->referral) {
-
             if ($this->type === 'increment') {
                 $this->increment($owner, $priceFrom, $priceTo);
             } else if ($this->type === 'decrement') {
                 $this->decrement($owner, $priceFrom, $priceTo);
             }
-
         }
-
     }
 
 	/**
@@ -94,27 +94,21 @@ class PayReferral implements ShouldQueue
 	 */
     private function increment(?User $owner, $priceFrom, $priceTo): void
     {
-
         if (!empty($owner?->wallet) && $priceFrom > 0) {
-
-            $currency  = $owner->wallet->currency;
+            $currency = $owner->wallet->currency;
             $priceFrom = $priceFrom * data_get($currency, 'rate');
 
             $owner->wallet()->increment('price', (double)$priceFrom);
-
             $this->transaction($owner, $priceFrom, 'referral_from_topup');
         }
 
         if ($this->user?->wallet && $priceTo > 0) {
-
-            $currency  = $owner->wallet->currency;
-            $priceTo   = $priceTo * data_get($currency, 'rate');
+            $currency = $this->user->wallet->currency;
+            $priceTo = $priceTo * data_get($currency, 'rate');
 
             $this->user->wallet()->increment('price', (double)$priceTo);
-
             $this->transaction($this->user, $priceTo, 'referral_to_topup');
         }
-
     }
 
 	/**
@@ -126,29 +120,21 @@ class PayReferral implements ShouldQueue
 	 */
     private function decrement(?User $owner, $priceFrom, $priceTo): void
     {
-
         if (!empty($owner?->wallet) && $priceFrom > 0) {
-
-            $currency  = $owner->wallet->currency;
+            $currency = $owner->wallet->currency;
             $priceFrom = $priceFrom * data_get($currency, 'rate');
 
             $owner->wallet()->decrement('price', (double)$priceFrom);
-
             $this->transaction($owner, $priceFrom, 'referral_from_withdraw');
-
         }
 
         if ($this->user?->wallet && $priceTo > 0) {
-
-            $currency  = $this->user->wallet->currency;
-            $priceTo   = $priceTo * data_get($currency, 'rate');
+            $currency = $this->user->wallet->currency;
+            $priceTo = $priceTo * data_get($currency, 'rate');
 
             $this->user->wallet()->decrement('price', (double)$priceTo);
-
             $this->transaction($this->user, $priceTo, 'referral_to_withdraw');
-
         }
-
     }
 
 	/**
@@ -169,7 +155,6 @@ class PayReferral implements ShouldQueue
         ]);
 
         $to = $user->id !== $this->user->id ? 'to' : 'from';
-
         $to .= str_replace('referral_to_', ' ', $type);
 
         $user->wallet->createTransaction([
