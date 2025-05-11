@@ -197,4 +197,20 @@ class Utility
 		return $orderIds;
 	}
 
+    /**
+     * Calculate delivery fee without any deductions
+     * @param float $distance
+     * @param Shop $shop
+     * @param float $rate
+     * @return float
+     */
+    public function calculateDeliveryFee(float $distance, Shop $shop, float $rate = 1): float
+    {
+        // Base price + price per km
+        $fee = $shop->price + ($shop->price_per_km * $distance);
+        
+        // Apply currency rate
+        return round($fee * $rate, 2);
+    }
+
 }

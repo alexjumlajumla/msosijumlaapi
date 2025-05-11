@@ -357,70 +357,60 @@ class OrderService extends CoreService implements OrderServiceInterface
 		/** @var Order $order */
 		$order = $order->fresh(['orderDetails', 'transaction', 'user', 'coupon', 'shop.subscription.subscription']);
 
-		$totalDiscount  = $order->orderDetails->sum('discount');
-		$totalPrice     = $order->orderDetails->sum('total_price');
+		// Calculate subtotal (sum of order details)
+		$subtotal = $order->orderDetails->sum('total_price');
+		$totalDiscount = $order->orderDetails->sum('discount');
 
-		$shopTax = max($totalPrice / 100 * $shop?->tax, 0);
+		// Calculate shop tax based on subtotal only
+		$shopTax = max($subtotal / 100 * $shop?->tax, 0);
 
-		$totalPrice += ($shopTax + $totalDiscount);
+		// Add tax to subtotal
+		$subtotal += $shopTax + $totalDiscount;
 
+		// Add receipt discount
 		$totalDiscount += $this->recalculateReceipt($order);
 
 		$isSubscribe = (int)Settings::where('key', 'by_subscription')->first()?->value;
-		$serviceFee  = (double)Settings::where('key', 'service_fee')->first()?->value ?? 0;
+		$serviceFee = (double)Settings::where('key', 'service_fee')->first()?->value ?? 0;
 
-		$totalPrice = max(max($totalPrice, 0) - max($totalDiscount, 0), 0);
+		// Calculate final subtotal after discounts
+		$subtotal = max(max($subtotal, 0) - max($totalDiscount, 0), 0);
 
 		$coupon = Coupon::checkCoupon(data_get($data, 'coupon'), $order->shop_id)->first();
 
+		// Keep delivery fee separate
 		$deliveryFee = $order->delivery_fee;
 
+		// Apply coupon to appropriate component
 		if ($coupon?->for === 'delivery_fee') {
-
 			$deliveryFee -= max($this->checkCoupon($coupon, $order, $deliveryFee), 0);
-
 		} else if ($coupon?->for === 'total_price') {
-
-			$totalPrice -= max($this->checkCoupon($coupon, $order, $totalPrice - $shopTax), 0);
-
+			$subtotal -= max($this->checkCoupon($coupon, $order, $subtotal - $shopTax), 0);
 		}
 
-		$totalPrice += $serviceFee;
+		// Add service fee to subtotal
+		$subtotal += $serviceFee;
 
 		$waiterFeeRate = $order->waiter_fee;
 
 		if ($order->delivery_type === Order::DINE_IN) {
-			$waiterFeeRate = $totalPrice / 100 * $shop->service_fee;
+			$waiterFeeRate = $subtotal / 100 * $shop->service_fee;
 		}
 
 		$tipsRate = 0;
 
 		if (data_get($data, 'tip_type') && data_get($data, 'tips')) {
-
 			$tipsRate += data_get($data, 'tip_type') === 'fix' ?
 				data_get($data, 'tips') :
-				$totalPrice / 100 * data_get($data, 'tips');
-
-			$totalPrice += $tipsRate;
-
+				$subtotal / 100 * data_get($data, 'tips');
 		}
 
-		$totalPrice = $totalPrice + $waiterFeeRate + $deliveryFee;
+		// Calculate final total
+		$totalPrice = $subtotal + $waiterFeeRate + $deliveryFee + $tipsRate;
 
-		if (data_get($data, 'tips')) {
-
-			$tipsRate += (data_get($data, 'tips') / $order->rate);
-
-			$totalPrice += $tipsRate;
-
-		}
-
+		// Calculate commission on subtotal only
 		$commissionFee = 0;
-
 		if (!$isSubscribe && $shop?->percentage > 0) {
-			//$commissionFee = max(($totalPrice / 100 * $shop?->percentage), 0);
-			
-			$subtotal = $order->orderDetails->sum('total_price');
 			$commissionFee = max(($subtotal / 100 * $shop->percentage), 0);
 		}
 
@@ -433,30 +423,25 @@ class OrderService extends CoreService implements OrderServiceInterface
 		$waiterId = $order->waiter_id;
 
 		if (data_get($data, 'table_id') && empty($waiterId)) {
-
 			$waiters = Table::find($data['table_id'])?->waiters;
-
 			$waiterId = $waiters?->first()?->id;
-
 			$workingWaiter = $waiters?->where('isWork', true)?->first();
-
 			if ($workingWaiter) {
 				$waiterId = $workingWaiter->id;
 			}
-
 		}
 
 		$order->update([
-			'total_price'    => $totalPrice,
-			'delivery_fee'   => $deliveryFee,
+			'total_price' => $totalPrice,
+			'delivery_fee' => $deliveryFee,
 			'commission_fee' => $commissionFee,
-			'service_fee'    => $serviceFee,
+			'service_fee' => $serviceFee,
 			'total_discount' => max($totalDiscount, 0),
-			'tax'            => $shopTax,
-			'waiter_fee'     => $waiterFeeRate,
-			'tips'           => $tipsRate,
-			'status'		 => $status,
-			'waiter_id'		 => $waiterId,
+			'tax' => $shopTax,
+			'waiter_fee' => $waiterFeeRate,
+			'tips' => $tipsRate,
+			'status' => $status,
+			'waiter_id' => $waiterId,
 		]);
 
 		$isSubscribe = (int)Settings::where('key', 'by_subscription')->first()?->value;
