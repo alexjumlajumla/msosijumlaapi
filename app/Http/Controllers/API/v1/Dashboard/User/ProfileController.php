@@ -165,7 +165,7 @@ info('this->userService->create($request->validated())',$result);
                     'status' => false,
                     'message' => 'Token cannot be empty'
                 ], 400);
-            }
+        }
 
             // Strict FCM token format validation
             // FCM tokens typically follow this pattern:
@@ -202,7 +202,7 @@ info('this->userService->create($request->validated())',$result);
             }
 
             // Update token
-            $user->update([
+        $user->update([
                 'firebase_token' => $token
             ]);
 
@@ -210,7 +210,7 @@ info('this->userService->create($request->validated())',$result);
                 'user_id' => $user->id,
                 'token_prefix' => substr($token, 0, 15) . '...',
                 'token_length' => strlen($token)
-            ]);
+        ]);
 
             return response()->json([
                 'status' => true,

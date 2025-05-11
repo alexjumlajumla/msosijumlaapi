@@ -1,244 +1,104 @@
 <?php
 
 namespace App\Http\Controllers\API\v1\Dashboard\Admin;
-use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use Illuminate\Validation\ValidationException;
-use App\Services\LoanServices\LoanService;
+
+use App\Helpers\ResponseError;
+use App\Http\Requests\FilterParamsRequest;
+use App\Http\Resources\LoanResource;
 use App\Models\Loan;
-use App\Models\User;
-use App\Models\CreditScore;
-use Illuminate\Pagination\LengthAwarePaginator;
+use App\Services\LoanService\LoanService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
-
-
-class LoanController extends Controller
+class LoanController extends AdminBaseController
 {
-    protected $loanService;
+    private LoanService $service;
 
-    public function __construct(LoanService $loanService)
+    public function __construct(LoanService $service)
     {
-        $this->loanService = $loanService;
+        parent::__construct();
+        $this->service = $service;
     }
 
     /**
-     * Disburse a loan
+     * Display a listing of loans
      */
-
-    public function disburse(Request $request)
+    public function index(FilterParamsRequest $request): AnonymousResourceCollection
     {
-        try {
-            $data = $request->validate([
-                'user_id'       => 'required|exists:users,id',
-                'amount'        => 'required|numeric|min:1',
-                'interest_rate' => 'required|numeric|min:0',
-                'due_date'      => 'required|date|after:today',
-            ]);
+        $loans = Loan::with(['user', 'disbursedBy', 'repayments'])
+            ->when($request->input('user_id'), fn($q) => $q->where('user_id', $request->input('user_id')))
+            ->when($request->input('status'), fn($q) => $q->where('status', $request->input('status')))
+            ->orderBy($request->input('column', 'id'), $request->input('sort', 'desc'))
+            ->paginate($request->input('perPage', 15));
 
-            $adminId = auth('sanctum')->id();
-            $loan = $this->loanService->disburseLoan($data, $adminId);
+        return LoanResource::collection($loans);
+    }
 
-            return response()->json([
-                'status'  => true,
-                'message' => 'Loan disbursed successfully.',
-                'data'    => [
-                    'id'               => $loan->id,
-                    'user_id'          => $loan->user_id,
-                    'amount'           => $loan->amount,
-                    'interest_rate'    => $loan->interest_rate,
-                    'repayment_amount' => $loan->repayment_amount,
-                    'status'           => $loan->status,
-                    'disbursed_at'     => $loan->disbursed_at,
-                    'due_date'         => $loan->due_date,
-                ]
-            ], 201);
-        } catch (ValidationException $e) {
-            return $this->loanService->handleValidationException($e);
-        } catch (\Throwable $e) {
-            return $this->loanService->handleGeneralException($e, 'An error occurred during loan disbursement.');
+    /**
+     * Disburse a new loan
+     */
+    public function store(Request $request): JsonResponse
+    {
+        $result = $this->service->disburseLoan($request->all());
+
+        if (!data_get($result, 'status')) {
+            return $this->onErrorResponse($result);
         }
-    }
 
-    /**
-     * Record manual repayment
-     */
-    public function recordRepayment(Request $request)
-    {
-        try {
-            $data = $request->validate([
-                'loan_id'        => 'required|exists:loans,id',
-                'amount'         => 'required|numeric|min:1',
-                'paid_at'        => 'nullable|date',
-                'payment_method' => 'required|in:cash,wallet,mobile_money,card',
-            ]);
-
-            $adminId = auth('sanctum')->id();
-            $repayment = $this->loanService->recordRepayment($data, $adminId);
-
-            return response()->json([
-                'status'  => true,
-                'message' => 'Repayment recorded successfully.',
-                'data'    => $repayment
-            ], 201);
-        } catch (ValidationException $e) {
-            return $this->loanService->handleValidationException($e);
-        } catch (\Throwable $e) {
-            return $this->loanService->handleGeneralException($e, 'An error occurred while recording the repayment.');
-        }
-    }
-
-    /**
-     * List loans with details
-     */
-    public function index(Request $request)
-    {
-        $loans = Loan::with(['vendor', 'repayments'])->paginate(20);
-    
-        // Get the current page items (collection)
-        $formattedLoans = $loans->items();
-    
-        // Modify the collection
-        $formattedLoans = collect($formattedLoans)->map(function ($loan) {
-            return [
-                'id'               => $loan->id,
-                'user_id'          => $loan->user_id,
-                'amount'           => $loan->amount,
-                'interest_rate'    => $loan->interest_rate,
-                'repayment_amount' => $loan->repayment_amount,
-                'disbursed_by'     => $loan->disbursed_by,
-                'disbursed_at'     => $loan->disbursed_at,
-                'due_date'         => $loan->due_date,
-                'status'           => $loan->status,
-                'created_at'       => $loan->created_at,
-                'updated_at'       => $loan->updated_at,
-                'vendor' => $loan->vendor ? [
-                    'id'     => $loan->vendor->id,
-                    'name'   => $loan->vendor->firstname . ' ' . $loan->vendor->lastname,
-                    'email'  => $loan->vendor->email,
-                    'phone'  => $loan->vendor->phone,
-                    'gender' => $loan->vendor->gender,
-                ] : null,
-                'repayments' => $loan->repayments->map(function ($repayment) {
-                    return [
-                        'id'             => $repayment->id,
-                        'amount'         => $repayment->amount,
-                        'payment_method' => $repayment->payment_method,
-                        'paid_at'        => $repayment->paid_at,
-                    ];
-                }),
-            ];
-        });
-    
-        // Create a new paginator with the modified collection
-        $paginatedLoans = new LengthAwarePaginator(
-            $formattedLoans,  // The modified collection
-            $loans->total(),  // Total number of items (usually from the query)
-            $loans->perPage(), // Number of items per page
-            $loans->currentPage(), // Current page number
-            ['path' => url()->current()] // The current URL (for pagination links)
+        return $this->successResponse(
+            __('errors.' . ResponseError::RECORD_WAS_SUCCESSFULLY_CREATED, locale: $this->language),
+            LoanResource::make(data_get($result, 'data'))
         );
-    
-        return response()->json([
-            'status' => true,
-            'data'   => $paginatedLoans,
-        ]);
     }
-    
 
     /**
-     * Get a user's total outstanding loan balance
+     * Display loan details
      */
+    public function show(int $id): JsonResponse
+    {
+        $loan = Loan::with(['user', 'disbursedBy', 'repayments'])->find($id);
 
-    public function getUserLoanBalance($userId)
-{
-    // Validate user_id exists
-    $user = User::find($userId);
-
-    if (!$user) {
-        return response()->json([
-            'status' => false,
-            'message' => 'User not found.',
-        ], 404);
-    }
-
-    $response = $this->loanService->getUserLoanBalance(['user_id' => $userId]);
-
-    return response()->json($response);
-}
-
-
-
-    public function repayFromWallet(Request $request)
-{
-    $data = $request->validate([
-        'loan_id' => 'required|exists:loans,id',
-    ]);
-
-    $adminId = auth('sanctum')->id();
-
-    try {
-        $repayment = $this->loanService->repayLoanFromWallet($data['loan_id'], $adminId);
-
-        return response()->json([
-            'status'  => true,
-            'message' => 'Loan repayment from wallet successful.',
-            'data'    => $repayment
-        ], 200);
-    } catch (ValidationException $e) {
-        return $this->loanService->handleValidationException($e);
-    } catch (\Throwable $e) {
-        return $this->loanService->handleGeneralException($e, 'Failed to repay loan from wallet.');
-    }
-
-    
-}
-
-
-
-
-public function getUserCreditScore($userId)
-{
-    try {
-        // Validate user_id
-        if (!User::where('id', $userId)->exists()) {
-            return response()->json([
-                'status' => false,
-                'message' => 'Invalid or non-existent user_id.',
-            ], 422);
+        if (!$loan) {
+            return $this->onErrorResponse([
+                'code' => ResponseError::ERROR_404,
+                'message' => __('errors.' . ResponseError::ERROR_404, locale: $this->language)
+            ]);
         }
 
-        // Fetch the credit score along with the user's email
-        $userCreditScore = CreditScore::where('user_id', $userId)
-            ->with('user')  // Ensure this relationship exists
-            ->first();
+        return $this->successResponse(
+            __('errors.' . ResponseError::SUCCESS, locale: $this->language),
+            LoanResource::make($loan)
+        );
+    }
 
-        if (!$userCreditScore) {
-            return response()->json([
-                'status'  => false,
-                'message' => 'Credit score not found for the user.',
-            ], 404);
+    /**
+     * Record a loan repayment
+     */
+    public function recordRepayment(Request $request): JsonResponse
+    {
+        $result = $this->service->recordRepayment($request->all());
+
+        if (!data_get($result, 'status')) {
+            return $this->onErrorResponse($result);
         }
 
-        return response()->json([
-            'status'  => true,
-            'message' => 'User credit score retrieved successfully.',
-            'data'    => [
-                'user_id'      => $userCreditScore->user_id,
-                'email'        => $userCreditScore->user->email,
-                'credit_score' => $userCreditScore->current_score,
-                'score_date'   => $userCreditScore->created_at,
-            ]
-        ]);
-    } catch (\Throwable $e) {
-        return response()->json([
-            'status'  => false,
-            'message' => 'An error occurred while fetching the credit score.',
-            'error'   => $e->getMessage(),
-        ], 500);
+        return $this->successResponse(
+            __('errors.' . ResponseError::RECORD_WAS_SUCCESSFULLY_CREATED, locale: $this->language),
+            data_get($result, 'data')
+        );
     }
-}
 
+    /**
+     * Get loan statistics for a user
+     */
+    public function userStats(int $userId): JsonResponse
+    {
+        $stats = $this->service->getUserLoanStats($userId);
 
-
-
+        return $this->successResponse(
+            __('errors.' . ResponseError::SUCCESS, locale: $this->language),
+            $stats
+        );
+    }
 }

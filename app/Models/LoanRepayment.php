@@ -2,23 +2,35 @@
 
 namespace App\Models;
 
+use App\Traits\Loadable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Models\User;
 use App\Models\Loan;
 
 class LoanRepayment extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes, Loadable;
 
-    protected $fillable = [
-        'loan_id',
-        'user_id',
-        'amount',
-        'payment_method',
-        'recorded_by',
-        'paid_at',
+    protected $guarded = ['id'];
+
+    protected $casts = [
+        'amount' => 'float',
+        'paid_at' => 'datetime',
+    ];
+
+    const PAYMENT_METHOD_WALLET = 'wallet';
+    const PAYMENT_METHOD_MOBILE_MONEY = 'mobile_money';
+    const PAYMENT_METHOD_CASH = 'cash';
+    const PAYMENT_METHOD_CARD = 'card';
+
+    const PAYMENT_METHODS = [
+        self::PAYMENT_METHOD_WALLET,
+        self::PAYMENT_METHOD_MOBILE_MONEY,
+        self::PAYMENT_METHOD_CASH,
+        self::PAYMENT_METHOD_CARD,
     ];
 
     /**
@@ -30,17 +42,17 @@ class LoanRepayment extends Model
     }
 
     /**
-     * Get the vendor who made the repayment.
+     * Get the user associated with this repayment.
      */
-    public function vendor(): BelongsTo
+    public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'user_id');
+        return $this->belongsTo(User::class);
     }
 
     /**
      * Get the admin who recorded the repayment.
      */
-    public function admin(): BelongsTo
+    public function recordedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'recorded_by');
     }

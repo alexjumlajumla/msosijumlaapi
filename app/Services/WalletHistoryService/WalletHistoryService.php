@@ -225,4 +225,145 @@ class WalletHistoryService extends CoreService
 			];
 		});
 	}
+
+    /**
+     * Process bulk wallet transfers
+     */
+    public function bulkTransfer(array $data): array
+    {
+        try {
+            return DB::transaction(function () use ($data) {
+                $sender = auth('sanctum')->user();
+                $results = [];
+
+                foreach (data_get($data, 'transfers', []) as $transfer) {
+                    /** @var User $recipient */
+                    $recipient = User::find(data_get($transfer, 'user_id'));
+                    $amount = data_get($transfer, 'amount');
+
+                    if (!$recipient?->wallet) {
+                        $results[] = [
+                            'user_id' => data_get($transfer, 'user_id'),
+                            'status' => false,
+                            'message' => __('errors.' . ResponseError::ERROR_108, locale: $this->language)
+                        ];
+                        continue;
+                    }
+
+                    if ($sender->wallet->price < $amount) {
+                        $results[] = [
+                            'user_id' => data_get($transfer, 'user_id'),
+                            'status' => false,
+                            'message' => __('errors.' . ResponseError::ERROR_109, locale: $this->language)
+                        ];
+                        continue;
+                    }
+
+                    // Deduct from sender
+                    $this->create([
+                        'type' => 'withdraw',
+                        'price' => $amount,
+                        'note' => "Bulk transfer to {$recipient->firstname} {$recipient->lastname}",
+                        'status' => WalletHistory::PAID,
+                        'user' => $sender,
+                    ]);
+
+                    // Credit recipient
+                    $this->create([
+                        'type' => 'topup',
+                        'price' => $amount,
+                        'note' => "Bulk transfer from {$sender->firstname} {$sender->lastname}",
+                        'status' => WalletHistory::PAID,
+                        'user' => $recipient,
+                    ]);
+
+                    $results[] = [
+                        'user_id' => $recipient->id,
+                        'status' => true,
+                        'amount' => $amount
+                    ];
+                }
+
+                return [
+                    'status' => true,
+                    'code' => ResponseError::NO_ERROR,
+                    'results' => $results
+                ];
+            });
+        } catch (Throwable $e) {
+            $this->error($e);
+            return [
+                'status' => false,
+                'code' => ResponseError::ERROR_501,
+                'message' => $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Process wallet top-up using payment gateway
+     */
+    public function topUpWallet(array $data): array
+    {
+        try {
+            /** @var User $user */
+            $user = auth('sanctum')->user();
+            $amount = data_get($data, 'amount');
+            $paymentMethod = data_get($data, 'payment_method');
+
+            if (!$user->wallet) {
+                return [
+                    'status' => false,
+                    'code' => ResponseError::ERROR_108,
+                    'message' => __('errors.' . ResponseError::ERROR_108, locale: $this->language)
+                ];
+            }
+
+            // Create pending wallet history
+            $walletHistory = $this->create([
+                'type' => 'topup',
+                'price' => $amount,
+                'note' => "Wallet top-up via $paymentMethod",
+                'status' => WalletHistory::PROCESSED,
+                'user' => $user,
+            ]);
+
+            if (!data_get($walletHistory, 'status')) {
+                return $walletHistory;
+            }
+
+            // Process payment through payment gateway
+            $payment = Payment::where('tag', $paymentMethod)->first();
+            
+            if (!$payment) {
+                return [
+                    'status' => false,
+                    'code' => ResponseError::ERROR_432,
+                    'message' => __('errors.' . ResponseError::ERROR_432, locale: $this->language)
+                ];
+            }
+
+            $transaction = data_get($walletHistory, 'data')->createTransaction([
+                'price' => $amount,
+                'user_id' => $user->id,
+                'payment_sys_id' => $payment->id,
+                'note' => "Wallet top-up transaction",
+                'perform_time' => now(),
+                'status_description' => "Transaction for wallet top-up"
+            ]);
+
+            return [
+                'status' => true,
+                'code' => ResponseError::NO_ERROR,
+                'data' => $transaction
+            ];
+        } catch (Throwable $e) {
+            $this->error($e);
+            return [
+                'status' => false,
+                'code' => ResponseError::ERROR_501,
+                'message' => $e->getMessage()
+            ];
+        }
+    }
 }

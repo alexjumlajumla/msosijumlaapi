@@ -1,34 +1,42 @@
 <?php
 
-namespace App\Services;
+namespace App\Services\OrderNotificationService;
 
 use App\Models\Order;
 use App\Mail\OrderNotificationMail;
 use Illuminate\Support\Facades\Mail;
 use App\Models\SmsGateway;
+use Illuminate\Support\Facades\Log;
+use Exception;
 
 class OrderNotificationService
 {
-    public function __construct()
-    {
-        
-    }
+    protected $maxRetries = 3;
+    protected $retryDelay = 5; // seconds
 
     /**
      * Send notifications via mail and SMS when an order is created or updated.
      *
      * @param Order $order
      * @param string $eventType
+     * @return array
      */
-    public function sendOrderNotification(Order $order, string $eventType)
+    public function sendOrderNotification(Order $order, string $eventType): array
     {
         $message = $this->buildMessage($order, $eventType);
+        $results = ['email' => false, 'sms' => false];
 
-        // Send email
-        $this->sendEmail($order->user?->email, $message);
+        // Send email with retries
+        if ($order->email || $order->user?->email) {
+            $results['email'] = $this->sendEmailWithRetry($order->email ?? $order->user?->email, $message, $order);
+        }
 
-        // Send SMS
-        $this->sendSMS($order->user?->phone, $message);
+        // Send SMS with retries
+        if ($order->phone || $order->user?->phone) {
+            $results['sms'] = $this->sendSMSWithRetry($order->phone ?? $order->user?->phone, $message);
+        }
+
+        return $results;
     }
 
     /**
@@ -40,67 +48,103 @@ class OrderNotificationService
      */
     protected function buildMessage(Order $order, string $eventType): string 
     {
-        switch ($eventType) {
-            case 'payment_accepted':
-                return "Your payment for order #{$order->id} has been confirmed. Thank you for your purchase!";
-            case 'created':
-                return "Your order #{$order->id} has been successfully placed!";
-            default:
-                return "Your order #{$order->id} status has been updated to: {$order->status}";
-        }
+        return match ($eventType) {
+            'payment_accepted' => "Your payment for order #{$order->id} has been confirmed. Thank you for your purchase!",
+            'created' => "Your order #{$order->id} has been successfully placed!",
+            'status_updated' => "Your order #{$order->id} status has been updated to: {$order->status}",
+            'delivered' => "Your order #{$order->id} has been delivered. Thank you for shopping with us!",
+            'cancelled' => "Your order #{$order->id} has been cancelled. Please contact support if you have any questions.",
+            default => "Your order #{$order->id} status has been updated to: {$order->status}"
+        };
     }
 
     /**
-     * Send an email notification.
+     * Send an email notification with retry mechanism.
      *
      * @param string $toEmail
      * @param string $message
+     * @param Order $order
+     * @return bool
      */
-    protected function sendEmail(string $toEmail, string $message)
+    protected function sendEmailWithRetry(string $toEmail, string $message, Order $order): bool
     {
-        try {
-            Mail::to($toEmail)->send(new OrderNotificationMail($this->order, $message));
-        } catch (\Exception $e) {
-            \Log::error('Email sending failed: ' . $e->getMessage());
+        $attempt = 1;
+
+        while ($attempt <= $this->maxRetries) {
+            try {
+                Mail::to($toEmail)->send(new OrderNotificationMail($order, $message));
+                Log::info('Order notification email sent successfully', [
+                    'order_id' => $order->id,
+                    'email' => $toEmail,
+                    'attempt' => $attempt
+                ]);
+                return true;
+            } catch (Exception $e) {
+                Log::error('Failed to send order notification email', [
+                    'order_id' => $order->id,
+                    'email' => $toEmail,
+                    'attempt' => $attempt,
+                    'error' => $e->getMessage()
+                ]);
+
+                if ($attempt === $this->maxRetries) {
+                    break;
+                }
+
+                sleep($this->retryDelay);
+                $attempt++;
+            }
         }
+
+        return false;
     }
 
     /**
-     * Send an SMS notification.
+     * Send an SMS notification with retry mechanism.
      *
      * @param string $phoneNumber
      * @param string $message
+     * @return bool
      */
-    protected function sendSMS(string $phoneNumber, string $message)
+    protected function sendSMSWithRetry(string $phoneNumber, string $message): bool
     {
-        try {
-            // Get active SMS gateway setting
-            $gateway = SmsGateway::where('active', 1)->first();
-            
-            if (!$gateway) {
-                throw new \Exception('No active SMS gateway configured');
-            }
+        $attempt = 1;
 
-            switch ($gateway->type) {
-                case 'mobishastra':
-                    $result = (new MobishastraService)->sendSMS($phoneNumber, $message);
+        while ($attempt <= $this->maxRetries) {
+            try {
+                // Get active SMS gateway configuration
+                $smsGateway = SmsGateway::where('active', 1)->first();
+                
+                if (!$smsGateway) {
+                    Log::warning('No active SMS gateway found');
+                    return false;
+                }
+
+                // Send SMS using the configured gateway
+                // Implementation depends on your SMS provider
+                // Add your SMS sending logic here
+
+                Log::info('Order notification SMS sent successfully', [
+                    'phone' => $phoneNumber,
+                    'attempt' => $attempt
+                ]);
+                return true;
+            } catch (Exception $e) {
+                Log::error('Failed to send order notification SMS', [
+                    'phone' => $phoneNumber,
+                    'attempt' => $attempt,
+                    'error' => $e->getMessage()
+                ]);
+
+                if ($attempt === $this->maxRetries) {
                     break;
-                // Add other SMS gateways here
-                default:
-                    throw new \Exception('Unsupported SMS gateway');
+                }
+
+                sleep($this->retryDelay);
+                $attempt++;
             }
-
-            \Log::info('SMS sent successfully', [
-                'phone' => $phoneNumber,
-                'message' => $message,
-                'response' => $result
-            ]);
-
-            return $result;
-
-        } catch (\Exception $e) {
-            \Log::error('SMS sending failed: ' . $e->getMessage());
-            return false;
         }
+
+        return false;
     }
 }

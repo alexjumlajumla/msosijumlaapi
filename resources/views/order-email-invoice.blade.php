@@ -167,6 +167,40 @@ if ($order->delivery_type !== Order::DELIVERY) {
                 padding: 5px;
             }
         }
+
+        .addons {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 4px;
+            padding: 4px 8px;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+        
+        .price-summary {
+            margin-top: 20px;
+            border-top: 2px solid #eee;
+            padding-top: 20px;
+        }
+        
+        .summary-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .summary-row.discount {
+            color: #e53935;
+        }
+        
+        .summary-row.total {
+            font-weight: bold;
+            font-size: 1.2em;
+            border-top: 2px solid #eee;
+            margin-top: 10px;
+            padding-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -201,89 +235,97 @@ if ($order->delivery_type !== Order::DELIVERY) {
                 </thead>
                 <tbody>
                 @foreach($order->orderDetails as $orderDetail)
-                @php
-                            $addons = '';
-                            $orderDetail->children?->transform(function ($i) use(&$addons, $order) {
-                                $addons .= $i?->stock?->countable?->translation?->title . " x $i?->quantity {$order->currency?->symbol}$i?->rate_total_price, ";
-                            });
-                            $addons = substr($addons, 0, -2);
+                    @php
+                        $addons = '';
+                        $orderDetail->children?->transform(function ($i) use(&$addons, $order) {
+                            $addons .= $i?->stock?->countable?->translation?->title . " x $i?->quantity {$order->currency?->symbol}$i?->rate_total_price, ";
+                        });
+                        $addons = substr($addons, 0, -2);
 
-                            $extras = '';
-
-                            foreach($orderDetail->stock->stockExtras ?? (object)[] as $extra) {
-
-                                if(!$extra?->value) {
-                                    continue;
-                                }
-
-                                $extras .= ',' . $extra?->value;
+                        $extras = '';
+                        foreach($orderDetail->stock->stockExtras ?? (object)[] as $extra) {
+                            if(!$extra?->value) {
+                                continue;
                             }
-
-                        @endphp
-                <tr>
-                    <td class="blue-color">{{ $orderDetail->stock?->countable?->translation?->title }}{{ $extras }}{{ $addons }}</td>
-                    <td>{{ $orderDetail->quantity }}</td>
-                    <td>
-                        {{ $position === 'before' ? $symbol : '' }}
-                        {{ number_format($orderDetail->rate_total_price, 2)  }}
-                        {{ $position === 'after' ? $symbol : '' }}
-                    </td>
-                </tr>
+                            $extras .= ',' . $extra?->value;
+                        }
+                    @endphp
+                    <tr>
+                        <td class="blue-color">
+                            {{ $orderDetail->stock?->countable?->translation?->title }}{{ $extras }}
+                            @if(!empty($addons))
+                                <div class="addons">{{ $addons }}</div>
+                            @endif
+                        </td>
+                        <td>{{ $orderDetail->quantity }}</td>
+                        <td>
+                            {{ $position === 'before' ? $symbol : '' }}
+                            {{ number_format($orderDetail->rate_total_price, 2) }}
+                            {{ $position === 'after' ? $symbol : '' }}
+                        </td>
+                    </tr>
                 @endforeach
                 </tbody>
             </table>
-            <p>
-                <strong>
-                    {{ $subtotal }}:
-                    {{ $position === 'before' ? $symbol : '' }}
-                    {{ number_format($order->origin_price, 2)  }}
-                    {{ $position === 'after' ? $symbol : '' }}
-                </strong>
-            </p>
-            <p>
-                <strong>
-                    {{ $taxTitle }}:
-                    {{ $position === 'before' ? $symbol : '' }}
-                    {{ number_format($order->rate_tax, 2)  }}
-                    {{ $position === 'after' ? $symbol : '' }}
-                </strong>
-            </p>
-            <p>
-                <strong>
-                    {{ $deliveryFeeTitle }}:
-                    {{ $position === 'before' ? $symbol : '' }}
-                    {{ number_format($order->rate_delivery_fee, 2)  }}
-                    {{ $position === 'after' ? $symbol : '' }}
-                </strong>
-            </p>
-            @if($order->rate_coupon_price)
-            <p>
-                <strong>
-                    {{ $couponTitle }}:
-                    {{ $position === 'before' ? $symbol : '' }}
-                    <span style="color: red">{{ number_format($order->rate_coupon_price, 2)  }}</span>
-                    {{ $position === 'after' ? $symbol : '' }}
-                </strong>
-            </p>
-            @endif
-            @if($order->rate_total_discount)
-            <p>
-                <strong>
-                    {{ $discountTitle }}:
-                    {{ $position === 'before' ? $symbol : '' }}
-                    <span style="color: red">- {{ number_format($order->rate_total_discount, 2)  }}</span>
-                    {{ $position === 'after' ? $symbol : '' }}
-                </strong>
-            </p>
-            @endif
-            <p>
-                <strong>
-                    {{ $totalTitle }}:
-                    {{ $position === 'before' ? $symbol : '' }}
-                    {{ number_format($order->rate_total_price, 2)  }}
-                    {{ $position === 'after' ? $symbol : '' }}
-                </strong>
-            </p>
+            <div class="price-summary">
+                <div class="summary-row">
+                    <span class="label">{{ $subtotal }}:</span>
+                    <span class="value">
+                        {{ $position === 'before' ? $symbol : '' }}
+                        {{ number_format($order->origin_price, 2) }}
+                        {{ $position === 'after' ? $symbol : '' }}
+                    </span>
+                </div>
+
+                <div class="summary-row">
+                    <span class="label">{{ $taxTitle }}:</span>
+                    <span class="value">
+                        {{ $position === 'before' ? $symbol : '' }}
+                        {{ number_format($order->rate_tax, 2) }}
+                        {{ $position === 'after' ? $symbol : '' }}
+                    </span>
+                </div>
+
+                <div class="summary-row">
+                    <span class="label">{{ $deliveryFeeTitle }}:</span>
+                    <span class="value">
+                        {{ $position === 'before' ? $symbol : '' }}
+                        {{ number_format($order->rate_delivery_fee, 2) }}
+                        {{ $position === 'after' ? $symbol : '' }}
+                    </span>
+                </div>
+
+                @if($order->rate_coupon_price)
+                <div class="summary-row discount">
+                    <span class="label">{{ $couponTitle }}:</span>
+                    <span class="value">
+                        {{ $position === 'before' ? $symbol : '' }}
+                        -{{ number_format($order->rate_coupon_price, 2) }}
+                        {{ $position === 'after' ? $symbol : '' }}
+                    </span>
+                </div>
+                @endif
+
+                @if($order->rate_total_discount)
+                <div class="summary-row discount">
+                    <span class="label">{{ $discountTitle }}:</span>
+                    <span class="value">
+                        {{ $position === 'before' ? $symbol : '' }}
+                        -{{ number_format($order->rate_total_discount, 2) }}
+                        {{ $position === 'after' ? $symbol : '' }}
+                    </span>
+                </div>
+                @endif
+
+                <div class="summary-row total">
+                    <span class="label">{{ $totalTitle }}:</span>
+                    <span class="value">
+                        {{ $position === 'before' ? $symbol : '' }}
+                        {{ number_format($order->rate_total_price, 2) }}
+                        {{ $position === 'after' ? $symbol : '' }}
+                    </span>
+                </div>
+            </div>
         </div>
     </div>
     <div class="footer">

@@ -131,4 +131,21 @@ class WalletController extends UserBaseController
             ->orderBy($request->input('column', 'created_at'), $request->input('sort', 'desc'))
             ->paginate($request->input('perPage', 10));
     }
+
+    /**
+     * Top up wallet using payment gateway
+     */
+    public function topUp(Request $request): JsonResponse
+    {
+        $result = $this->walletHistoryService->topUpWallet($request->all());
+
+        if (!data_get($result, 'status')) {
+            return $this->onErrorResponse($result);
+        }
+
+        return $this->successResponse(
+            __('errors.' . ResponseError::RECORD_WAS_SUCCESSFULLY_CREATED, locale: $this->language),
+            data_get($result, 'data')
+        );
+    }
 }

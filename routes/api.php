@@ -1414,13 +1414,20 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
             Route::post('loans/repay-wallet', [Admin\LoanController::class, 'repayFromWallet']);
             Route::get('loans/credit-score/{userId}', [Admin\LoanController::class, 'getUserCreditScore']);
 
+            /* Loans Analytics */
+            Route::get('loans/analytics/statistics', [Admin\LoanAnalyticsController::class, 'getStatistics']);
+            Route::get('loans/analytics/disbursement-chart', [Admin\LoanAnalyticsController::class, 'getDisbursementChart']);
+            Route::get('loans/analytics/repayment-chart', [Admin\LoanAnalyticsController::class, 'getRepaymentChart']);
+            Route::get('loans/analytics/status-distribution', [Admin\LoanAnalyticsController::class, 'getStatusDistribution']);
+            Route::get('loans/analytics/payment-methods', [Admin\LoanAnalyticsController::class, 'getPaymentMethodDistribution']);
+
 
 		});
 
 
     });
 	
-					    Route::get('test-push-notification', [PushNotificationController::class, 'testPushNotification']);
+	Route::get('test-push-notification', [PushNotificationController::class, 'testPushNotification']);
 
 
 
@@ -1441,6 +1448,24 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
         Route::any('maksekeskus/payment',   [Payment\MaksekeskusController::class,  'paymentWebHook']);
         Route::any('pay-fast/payment',      [Payment\PayFastController::class,      'paymentWebHook']);
         Route::any('telegram',              [TelegramBotController::class,          'webhook']);
+    });
+
+    Route::group(['prefix' => 'dashboard'], function () {
+        Route::group(['prefix' => 'admin', 'middleware' => ['sanctum.check', 'role:admin'], 'as' => 'admin.'], function () {
+            // ... existing admin routes ...
+
+            /* VFD Receipts */
+            Route::group(['prefix' => 'vfd-receipts', 'as' => 'vfd-receipts.'], function () {
+                Route::get('/', [Admin\VfdReceiptController::class, 'index'])->name('index');
+                Route::post('generate', [Admin\VfdReceiptController::class, 'generate'])->name('generate');
+                Route::get('/{receipt}', [Admin\VfdReceiptController::class, 'show'])->name('show');
+                Route::delete('/{receipt}', [Admin\VfdReceiptController::class, 'destroy'])->name('destroy');
+                Route::get('/export', [Admin\VfdReceiptController::class, 'export'])->name('export');
+                Route::get('/search', [Admin\VfdReceiptController::class, 'search'])->name('search');
+            });
+
+            // ... existing admin routes ...
+        });
     });
 });
 

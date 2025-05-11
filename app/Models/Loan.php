@@ -2,31 +2,37 @@
 
 namespace App\Models;
 
+use App\Traits\Loadable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use App\Models\User;
 use App\Models\LoanRepayment;
 
 class Loan extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes, Loadable;
 
-    protected $fillable = [
-        'user_id',
-        'amount',
-        'interest_rate',
-        'repayment_amount',
-        'disbursed_by',
-        'disbursed_at',
-        'due_date',
-        'status',
+    protected $guarded = ['id'];
+
+    protected $casts = [
+        'amount' => 'float',
+        'interest_rate' => 'float',
+        'repayment_amount' => 'float',
+        'disbursed_at' => 'datetime',
+        'due_date' => 'datetime',
     ];
 
-    protected $dates = [
-        'disbursed_at',
-        'due_date',
+    const STATUS_ACTIVE = 'active';
+    const STATUS_REPAID = 'repaid';
+    const STATUS_DEFAULTED = 'defaulted';
+
+    const STATUSES = [
+        self::STATUS_ACTIVE,
+        self::STATUS_REPAID,
+        self::STATUS_DEFAULTED,
     ];
 
     /**
@@ -56,26 +62,33 @@ class Loan extends Model
     /**
      * Accessor to get total amount repaid so far.
      */
-
     public function getTotalRepaidAttribute(): float
     {
         return $this->repayments()->sum('amount');
     }
 
-    // /**
-    //  * Determine if loan is fully repaid.
-    //  */
-    // public function isFullyRepaid(): bool
-    // {
-    //     return $this->total_repaid >= $this->repayment_amount;
-    // }
+    public function getRemainingAmountAttribute(): float
+    {
+        return $this->repayment_amount - $this->repayments->sum('amount');
+    }
 
+    public function getIsOverdueAttribute(): bool
+    {
+        return $this->status === self::STATUS_ACTIVE && now()->gt($this->due_date);
+    }
 
-	public function user()
+    public function calculateRepaymentAmount(): float
+    {
+        return $this->amount + ($this->amount * ($this->interest_rate / 100));
+    }
+
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
     }
 
-
-    
+    public function disbursedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'disbursed_by');
+    }
 }
