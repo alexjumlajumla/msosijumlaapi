@@ -1225,7 +1225,7 @@ class OrderService extends CoreService implements OrderServiceInterface
 
         \Log::debug('Sending SMS notification');
         OrderSmsService::newOrder($order);
-		
+
         \Log::debug('Sending push notification');
         $this->newOrderNotification($order);
 

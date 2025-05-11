@@ -132,13 +132,13 @@ trait Notification
 				\Log::error('[PushService] No receivers provided for notification');
 				return;
 			}
-
+	
 			\Log::info('[PushService] Preparing notification for ' . count($receivers) . ' receivers', [
 				'title' => $data['title'] ?? '',
 				'body' => $data['body'] ?? '',
 				'userIds' => $userIds
 			]);
-
+	
 			// Store notification in database if userIds are provided
 			if (!empty($userIds)) {
 				try {
@@ -148,12 +148,12 @@ trait Notification
 							'type' => $data['type'] ?? 'system',
 							'title' => $data['title'] ?? '',
 							'body' => $data['body'] ?? '',
-							'data' => $data
-						]);
+					'data' => $data
+				]);
 					}
 				} catch (\Exception $e) {
 					\Log::error('[PushService] Failed to store notification: ' . $e->getMessage());
-				}
+			}
 			}
 
 			// Get Firebase auth token
@@ -206,35 +206,35 @@ trait Notification
 					}
 
 					$notification = [
-						'message' => [
+					'message' => [
 							'token' => $token, // Individual token, not array
-							'notification' => [
+						'notification' => [
 								'title' => $data['title'] ?? '',
 								'body' => $data['body'] ?? '',
-							],
+						],
 							'data' => $formattedData,
-							'android' => [
+						'android' => [
 								'priority' => 'high',
-								'notification' => [
-									'sound' => 'default',
+							'notification' => [
+								'sound' => 'default',
 									'channel_id' => 'high_importance_channel'
-								]
-							],
-							'apns' => [
+							]
+						],
+						'apns' => [
 								'headers' => [
 									'apns-priority' => '10'
 								],
-								'payload' => [
-									'aps' => [
+							'payload' => [
+								'aps' => [
 										'sound' => 'default',
 										'badge' => 1,
 										'content-available' => 1
-									]
 								]
 							]
 						]
+					]
 					];
-
+	
 					$response = Http::withHeaders([
 						'Authorization' => 'Bearer ' . $authToken,
 						'Content-Type' => 'application/json',
@@ -281,8 +281,8 @@ trait Notification
 					\Log::error('[PushService] Exception sending notification to token', [
 						'token_prefix' => substr($token, 0, 15) . '...',
 						'error' => $e->getMessage()
-					]);
-				}
+				]);
+			}
 			}
 
 			\Log::info('[PushService] Notification sending complete', [
@@ -355,18 +355,18 @@ trait Notification
 	{
 		try {
 			return Cache::remember('firebase_auth_token', 300, function () {
-				$googleClient = new Client;
-				$googleClient->setAuthConfig(storage_path('app/google-service-account.json'));
-				$googleClient->addScope('https://www.googleapis.com/auth/firebase.messaging');
+		$googleClient = new Client;
+		$googleClient->setAuthConfig(storage_path('app/google-service-account.json'));
+		$googleClient->addScope('https://www.googleapis.com/auth/firebase.messaging');
 
-				$token = $googleClient->fetchAccessTokenWithAssertion()['access_token'];
+		$token = $googleClient->fetchAccessTokenWithAssertion()['access_token'];
 				
 				if (empty($token)) {
 					\Log::error('[PushService] Failed to get Firebase token - empty token returned');
 					throw new \Exception('Empty Firebase token returned');
 				}
 
-				return $token;
+		return $token;
 			});
 		} catch (\Throwable $e) {
 			\Log::error('[PushService] Failed to get Firebase token', [
@@ -383,29 +383,29 @@ trait Notification
 			\Log::info('[PushService] Starting new order notification for order #' . $order->id);
 			
 			// Get admin tokens
-			$adminFirebaseTokens = User::with(['roles' => fn($q) => $q->where('name', 'admin')])
-				->whereHas('roles', fn($q) => $q->where('name', 'admin'))
-				->whereNotNull('firebase_token')
+		$adminFirebaseTokens = User::with(['roles' => fn($q) => $q->where('name', 'admin')])
+			->whereHas('roles', fn($q) => $q->where('name', 'admin'))
+			->whereNotNull('firebase_token')
 				->where('firebase_token', '!=', '')
 				->where('firebase_token', '!=', '[]')
 				->where('firebase_token', '!=', 'null')
-				->pluck('firebase_token', 'id')
-				->toArray();
+			->pluck('firebase_token', 'id')
+			->toArray();
 
 			// Get seller tokens
-			$sellersFirebaseTokens = User::with([
-				'shop' => fn($q) => $q->where('id', $order->shop_id)
-			])
-				->whereHas('shop', fn($q) => $q->where('id', $order->shop_id))
-				->whereNotNull('firebase_token')
+		$sellersFirebaseTokens = User::with([
+			'shop' => fn($q) => $q->where('id', $order->shop_id)
+		])
+			->whereHas('shop', fn($q) => $q->where('id', $order->shop_id))
+			->whereNotNull('firebase_token')
 				->where('firebase_token', '!=', '')
 				->where('firebase_token', '!=', '[]')
 				->where('firebase_token', '!=', 'null')
-				->pluck('firebase_token', 'id')
-				->toArray();
+			->pluck('firebase_token', 'id')
+			->toArray();
 
-			$aTokens = [];
-			$sTokens = [];
+		$aTokens = [];
+		$sTokens = [];
 			$adminIds = [];
 			$sellerIds = [];
 
@@ -421,7 +421,7 @@ trait Notification
 				} elseif (!empty($adminToken)) {
 					$aTokens[] = $adminToken;
 					$adminIds[] = $userId;
-				}
+		}
 			}
 
 			// Process seller tokens
@@ -494,8 +494,8 @@ trait Notification
 					$notificationData['type'] = 'new_order';
 					$notificationData['title'] = 'Order #' . $order->id;
 					$notificationData['body'] = __('Your order #:id has been received!', ['id' => $order->id], $this->language);
-					
-					$this->sendNotification(
+
+		$this->sendNotification(
 						$userTokens,
 						$notificationData,
 						[$order->user_id]

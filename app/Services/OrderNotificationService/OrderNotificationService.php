@@ -71,7 +71,7 @@ class OrderNotificationService
         $attempt = 1;
 
         while ($attempt <= $this->maxRetries) {
-            try {
+        try {
                 Mail::to($toEmail)->send(new OrderNotificationMail($order, $message));
                 Log::info('Order notification email sent successfully', [
                     'order_id' => $order->id,
@@ -111,10 +111,10 @@ class OrderNotificationService
         $attempt = 1;
 
         while ($attempt <= $this->maxRetries) {
-            try {
+        try {
                 // Get active SMS gateway configuration
                 $smsGateway = SmsGateway::where('active', 1)->first();
-                
+            
                 if (!$smsGateway) {
                     Log::warning('No active SMS gateway found');
                     return false;

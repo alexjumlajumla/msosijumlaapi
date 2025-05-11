@@ -744,22 +744,37 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
             /* Shop Deliveryman Setting */
             Route::apiResource('shop-deliveryman-settings',Seller\ShopDeliverymanSettingController::class);
             Route::delete('shop-deliveryman-settings/delete',        [Seller\ShopDeliverymanSettingController::class, 'destroy']);
+            Route::get('shop-deliveryman-settings/drop/all',         [Admin\ShopDeliverymanSettingController::class, 'dropAll']);
+            Route::get('shop-deliveryman-settings/restore/all',      [Admin\ShopDeliverymanSettingController::class, 'restoreAll']);
+            Route::get('shop-deliveryman-settings/truncate/db',      [Admin\ShopDeliverymanSettingController::class, 'truncate']);
 
             /* Menu */
             Route::apiResource('menus',Seller\MenuController::class);
             Route::delete('menus/delete',        [Seller\MenuController::class, 'destroy']);
+            Route::get('menus/drop/all',    [Admin\MenuController::class, 'dropAll']);
+            Route::get('menus/restore/all', [Admin\MenuController::class, 'restoreAll']);
+            Route::get('menus/truncate/db', [Admin\MenuController::class, 'truncate']);
 
             /* Branch */
             Route::apiResource('branches',Seller\BranchController::class);
             Route::delete('branches/delete',        [Seller\BranchController::class, 'destroy']);
+            Route::get('branches/drop/all',    [Admin\BranchController::class, 'dropAll']);
+            Route::get('branches/restore/all', [Admin\BranchController::class, 'restoreAll']);
+            Route::get('branches/truncate/db', [Admin\BranchController::class, 'truncate']);
 
 			/* Inventory */
 			Route::apiResource('inventories',Seller\InventoryController::class);
 			Route::delete('inventories/delete',        [Seller\InventoryController::class, 'destroy']);
+			Route::get('inventories/drop/all',    [Admin\InventoryController::class, 'dropAll']);
+			Route::get('inventories/restore/all', [Admin\InventoryController::class, 'restoreAll']);
+			Route::get('inventories/truncate/db', [Admin\InventoryController::class, 'truncate']);
 
 			/* Inventory Items */
 			Route::apiResource('inventory-items', Seller\InventoryItemController::class);
 			Route::delete('inventory-items/delete', [Seller\InventoryItemController::class, 'destroy']);
+			Route::get('inventory-items/drop/all',      [Admin\InventoryItemController::class, 'dropAll']);
+			Route::get('inventory-items/restore/all',   [Admin\InventoryItemController::class, 'restoreAll']);
+			Route::get('inventory-items/truncate/db',   [Admin\InventoryItemController::class, 'truncate']);
 
             /* AdsPackage */
             Route::apiResource('ads-packages',        Seller\AdsPackageController::class)
@@ -1407,7 +1422,7 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
 			
 			
 			  /* Loans */
-            Route::apiResource('loans', Admin\LoanController::class)->only(['index']);;
+            Route::apiResource('loans', Admin\LoanController::class)->only(['index']);
             Route::post('loans/disburse', [Admin\LoanController::class, 'disburse']);
             Route::post('loans/repayment', [Admin\LoanController::class, 'recordRepayment']);
             Route::get('loans/{userId}', [Admin\LoanController::class, 'getUserLoanBalance']);
@@ -1421,13 +1436,15 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
             Route::get('loans/analytics/status-distribution', [Admin\LoanAnalyticsController::class, 'getStatusDistribution']);
             Route::get('loans/analytics/payment-methods', [Admin\LoanAnalyticsController::class, 'getPaymentMethodDistribution']);
 
+            /* Loans */
+            Route::apiResource('loan-repayments', Admin\LoanRepaymentController::class)->only(['index','store','destroy']);
 
 		});
 
 
     });
 	
-	Route::get('test-push-notification', [PushNotificationController::class, 'testPushNotification']);
+					    Route::get('test-push-notification', [PushNotificationController::class, 'testPushNotification']);
 
 
 

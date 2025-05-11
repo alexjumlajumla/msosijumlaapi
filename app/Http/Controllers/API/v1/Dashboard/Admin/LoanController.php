@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\API\v1\Dashboard\Admin;
 
+use App\Http\Controllers\API\v1\Dashboard\Admin\AdminBaseController;
 use App\Helpers\ResponseError;
 use App\Http\Requests\FilterParamsRequest;
 use App\Http\Resources\LoanResource;
@@ -13,26 +14,22 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class LoanController extends AdminBaseController
 {
-    private LoanService $service;
-
-    public function __construct(LoanService $service)
+    public function __construct(private LoanService $service)
     {
         parent::__construct();
-        $this->service = $service;
     }
 
     /**
      * Display a listing of loans
      */
-    public function index(FilterParamsRequest $request): AnonymousResourceCollection
+    public function index(Request $request): JsonResponse
     {
-        $loans = Loan::with(['user', 'disbursedBy', 'repayments'])
-            ->when($request->input('user_id'), fn($q) => $q->where('user_id', $request->input('user_id')))
-            ->when($request->input('status'), fn($q) => $q->where('status', $request->input('status')))
-            ->orderBy($request->input('column', 'id'), $request->input('sort', 'desc'))
-            ->paginate($request->input('perPage', 15));
+        $loans = Loan::with(['vendor', 'repayments'])
+            ->when($request->user_id, fn($q)=>$q->where('user_id',$request->user_id))
+            ->orderBy($request->input('column','id'), $request->input('sort','desc'))
+            ->paginate($request->input('perPage',15));
 
-        return LoanResource::collection($loans);
+        return $this->successResponse(__('web.list_of_records_found'), $loans);
     }
 
     /**
@@ -40,36 +37,27 @@ class LoanController extends AdminBaseController
      */
     public function store(Request $request): JsonResponse
     {
-        $result = $this->service->disburseLoan($request->all());
+        $data = $request->validate([
+            'user_id'       => 'required|exists:users,id',
+            'amount'        => 'required|numeric|min:1',
+            'interest_rate' => 'required|numeric|min:0',
+            'due_date'      => 'required|date|after:today',
+            'note'          => 'nullable|string',
+        ]);
 
-        if (!data_get($result, 'status')) {
-            return $this->onErrorResponse($result);
-        }
+        $result = $this->service->disburseLoan($data);
 
-        return $this->successResponse(
-            __('errors.' . ResponseError::RECORD_WAS_SUCCESSFULLY_CREATED, locale: $this->language),
-            LoanResource::make(data_get($result, 'data'))
-        );
+        return $result['status']
+            ? $this->successResponse(__('web.record_was_successfully_created'), $result['data'])
+            : $this->onErrorResponse($result);
     }
 
     /**
      * Display loan details
      */
-    public function show(int $id): JsonResponse
+    public function show(Loan $loan): JsonResponse
     {
-        $loan = Loan::with(['user', 'disbursedBy', 'repayments'])->find($id);
-
-        if (!$loan) {
-            return $this->onErrorResponse([
-                'code' => ResponseError::ERROR_404,
-                'message' => __('errors.' . ResponseError::ERROR_404, locale: $this->language)
-            ]);
-        }
-
-        return $this->successResponse(
-            __('errors.' . ResponseError::SUCCESS, locale: $this->language),
-            LoanResource::make($loan)
-        );
+        return $this->successResponse(__('web.record_has_been_successfully_found'), $loan->load(['vendor','repayments']));
     }
 
     /**
@@ -100,5 +88,12 @@ class LoanController extends AdminBaseController
             __('errors.' . ResponseError::SUCCESS, locale: $this->language),
             $stats
         );
+    }
+
+    // DELETE dashboard/admin/loans/{loan}
+    public function destroy(Loan $loan): JsonResponse
+    {
+        $loan->delete();
+        return $this->successResponse(__('web.record_was_successfully_deleted'));
     }
 }
