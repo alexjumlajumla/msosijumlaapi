@@ -145,6 +145,52 @@ class OrderStatusUpdateService extends CoreService
 						$order->transaction->update(['status' => $trxStatus]);
 					}
 
+                    // Generate VFD receipt automatically for delivery fee if not already generated
+                    try {
+                        // Ensure order has a delivery fee greater than zero before generating receipt
+                        if ($order->delivery_fee > 0) {
+                            // Avoid duplicate receipts for the same order
+                            $hasReceipt = \App\Models\VfdReceipt::where('model_type', \App\Models\Order::class)
+                                ->where('model_id', $order->id)
+                                ->where('receipt_type', \App\Models\VfdReceipt::TYPE_DELIVERY)
+                                ->exists();
+
+                            if (!$hasReceipt) {
+                                $paymentTag = $order->transaction?->paymentSystem?->tag ?? \App\Models\Payment::TAG_CASH;
+
+                                // Map internal payment tags to VFDService accepted values
+                                $paymentMethod = match ($paymentTag) {
+                                    \App\Models\Payment::TAG_CASH => 'cash',
+                                    \App\Models\Payment::TAG_WALLET, \App\Models\Payment::TAG_STRIPE, \App\Models\Payment::TAG_PAY_PAL,
+                                    \App\Models\Payment::TAG_PAY_STACK, \App\Models\Payment::TAG_RAZOR_PAY, \App\Models\Payment::TAG_MERCADO_PAGO,
+                                    \App\Models\Payment::TAG_PAY_TABS, \App\Models\Payment::TAG_FLUTTER_WAVE, \App\Models\Payment::TAG_MOLLIE,
+                                    \App\Models\Payment::TAG_IYZICO, \App\Models\Payment::TAG_MAKSEKESKUS, \App\Models\Payment::TAG_ZAIN_CASH,
+                                    \App\Models\Payment::TAG_MOYA_SAR, \App\Models\Payment::TAG_SELCOM => 'card',
+                                    default => 'other',
+                                };
+
+                                (new \App\Services\VfdService\VfdService)->generateReceipt(
+                                    \App\Models\VfdReceipt::TYPE_DELIVERY,
+                                    [
+                                        'model_id'       => $order->id,
+                                        'model_type'     => \App\Models\Order::class,
+                                        'amount'         => $order->delivery_fee,
+                                        'payment_method' => $paymentMethod,
+                                        'customer_name'  => $order->user?->firstname . ' ' . $order->user?->lastname,
+                                        'customer_phone' => $order->user?->phone,
+                                        'customer_email' => $order->user?->email,
+                                    ]
+                                );
+                            }
+                        }
+                    } catch (\Throwable $e) {
+                        \Illuminate\Support\Facades\Log::error('Automatic VFD receipt generation failed', [
+                            'order_id' => $order->id,
+                            'message'  => $e->getMessage(),
+                            'trace'    => $e->getTraceAsString(),
+                        ]);
+                    }
+
                 }
 
                 if ($status == Order::STATUS_CANCELED && $order->orderRefunds?->count() === 0) {
