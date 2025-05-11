@@ -185,12 +185,24 @@ class OrderRefundService extends CoreService
 
                         if ($order->paymentToPartner?->type === PaymentToPartner::SELLER) {
 
-							$sellerPrice = $order?->total_price
-								- $order?->delivery_fee
-								- $order?->service_fee
-								- $order?->commission_fee
-								- ($order?->coupon?->price ?? 0)
-								- $order?->pointHistories?->sum('price');
+							// Calculate base price from order details
+							$subtotal = $order->orderDetails->sum('total_price');
+
+							// Add shop tax
+							$shopTax = max($subtotal / 100 * $order->shop?->tax, 0);
+							$subtotal += $shopTax;
+
+							// Handle coupon deduction only if it's for total price
+							$couponDeduction = 0;
+							if ($order->coupon && $order->coupon->for === 'total_price') {
+								$couponDeduction = $order->coupon->price;
+							}
+
+							// Calculate seller's refund amount
+							$sellerPrice = $subtotal 
+								- $order->commission_fee 
+								- $couponDeduction
+								- $order->pointHistories->sum('price');
 
 							$seller = $order->shop->seller;
 

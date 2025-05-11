@@ -132,17 +132,26 @@ class PaymentToPartnerService extends CoreService
 	 */
 	private function addForSeller(Order $order, User $seller, Payment $payment): void
     {
+		// Calculate base price from order details
+		$subtotal = $order->orderDetails->sum('total_price');
 
-		$sellerPrice = $order->total_price
-			- $order->delivery_fee
-			- $order->service_fee
-			- $order->commission_fee
-			- ($order->coupon?->price ?? 0)
-			- $order->tips
+		// Add shop tax
+		$shopTax = max($subtotal / 100 * $order->shop?->tax, 0);
+		$subtotal += $shopTax;
+
+		// Handle coupon deduction only if it's for total price
+		$couponDeduction = 0;
+		if ($order->coupon && $order->coupon->for === 'total_price') {
+			$couponDeduction = $order->coupon->price;
+		}
+
+		// Calculate seller's earning
+		$sellerPrice = $subtotal 
+			- $order->commission_fee 
+			- $couponDeduction
 			- $order->pointHistories->sum('price');
 
 		if ($payment->tag === 'wallet') {
-
 			(new WalletHistoryService)->create([
 				'type'  	=> $sellerPrice > 0 ? 'topup' : 'withdraw',
 				'price' 	=> (double)str_replace('-', '', $sellerPrice),
@@ -158,7 +167,6 @@ class PaymentToPartnerService extends CoreService
 				'status'	=> WalletHistory::PAID,
 				'user'  	=> auth('sanctum')->user(),
 			]);
-
 		}
 
 		$sellerPartner = PaymentToPartner::create([
@@ -176,7 +184,6 @@ class PaymentToPartnerService extends CoreService
 			'status'            	=> Transaction::STATUS_PAID,
 			'status_description'	=> 'Transaction for seller payment to #' . $order->id
 		]);
-
 	}
 
 	/**
