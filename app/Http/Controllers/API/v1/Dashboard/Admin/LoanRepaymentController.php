@@ -8,6 +8,7 @@ use App\Services\LoanService\LoanService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use App\Http\Resources\LoanRepaymentResource;
+use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class LoanRepaymentController extends AdminBaseController
 {
@@ -16,7 +17,7 @@ class LoanRepaymentController extends AdminBaseController
         parent::__construct();
     }
 
-    public function index(Request $request): JsonResponse
+    public function index(Request $request): AnonymousResourceCollection
     {
         $repayments = LoanRepayment::with(['loan', 'user'])
             ->orderBy($request->input('column', 'id'), $request->input('sort', 'desc'))
