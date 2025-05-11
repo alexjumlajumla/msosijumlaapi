@@ -22,14 +22,14 @@ class LoanController extends AdminBaseController
     /**
      * Display a listing of loans
      */
-    public function index(Request $request): JsonResponse
+    public function index(Request $request): AnonymousResourceCollection
     {
         $loans = Loan::with(['vendor', 'repayments'])
-            ->when($request->user_id, fn($q)=>$q->where('user_id',$request->user_id))
-            ->orderBy($request->input('column','id'), $request->input('sort','desc'))
-            ->paginate($request->input('perPage',15));
+            ->when($request->user_id, fn($q) => $q->where('user_id', $request->user_id))
+            ->orderBy($request->input('column', 'id'), $request->input('sort', 'desc'))
+            ->paginate($request->input('perPage', 15));
 
-        return $this->successResponse(__('web.list_of_records_found'), $loans);
+        return LoanResource::collection($loans);
     }
 
     /**
