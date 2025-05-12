@@ -30,13 +30,9 @@ class BroadcastService extends CoreService
         $groups   = $payload['groups'];      // ['admin','seller'] etc.
         $channels = $payload['channels'];    // ['push','email']
 
-        $query = User::query();
-        if (!in_array('user', $groups)) {
-            // map group names to roles table
-            $query->whereHas('roles', function ($q) use ($groups) {
-                $q->whereIn('name', $groups);
-            });
-        }
+        $query = User::whereHas('roles', function ($q) use ($groups) {
+            $q->whereIn('name', $groups);
+        });
 
         $stats = [
             'emailed' => 0,
