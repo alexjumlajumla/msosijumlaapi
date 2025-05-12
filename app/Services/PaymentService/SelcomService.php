@@ -42,7 +42,7 @@ Log::info('Test log works! 333333333333333333333');
 
         $payment = Payment::where('tag', Payment::TAG_SELCOM)->first();
 		
-						Log::info('4444' . $payment);
+						Log::info('Selcom payment record', ['payment' => $payment?->id]);
 
 
         $paymentPayload = PaymentPayload::where('payment_id', $payment?->id)->first();
@@ -120,7 +120,7 @@ Log::info('Test log works! 333333333333333333333');
                 'price' 	 => $totalPrice,
 				'cart'		 => $data,
                 'shop_id'    => data_get($data, 'shop_id'),
-				'payment_id' => $payment->id,
+				'payment_id' => $payment?->id,
             ]
         ]);
     }
@@ -135,6 +135,10 @@ Log::info('Test log works! 333333333333333333333');
     public function subscriptionProcessTransaction(array $data, Shop $shop, $currency): Model|array|PaymentProcess
     {
         $payment = Payment::where('tag', Payment::TAG_SELCOM)->first();
+
+        if (!$payment) {
+            throw new Exception('Selcom payment method is not configured');
+        }
 
         $paymentPayload = PaymentPayload::where('payment_id', $payment?->id)->first();
         $payload        = $paymentPayload?->payload;
@@ -194,7 +198,7 @@ Log::info('Test log works! 333333333333333333333');
                 'price'           => round($subscription->price, 2) * 100,
                 'shop_id'         => $shop->id,
                 'subscription_id' => $modelId,
-				'payment_id' 	  => $payment->id,
+				'payment_id' 	  => $payment?->id,
             ]
         ]);
     }
