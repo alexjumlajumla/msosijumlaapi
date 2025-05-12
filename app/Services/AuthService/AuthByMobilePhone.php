@@ -123,6 +123,24 @@ class AuthByMobilePhone extends CoreService
             
         }
 
+        // If email already belongs to another user, return error early
+        $verifiedPhone = data_get($data, 'phone');
+        $submittedEmail = data_get($data, 'email');
+
+        if ($submittedEmail) {
+            $emailExistsForOther = $this->model()
+                ->where('email', $submittedEmail)
+                ->where('phone', '!=', $verifiedPhone)
+                ->exists();
+
+            if ($emailExistsForOther) {
+                return $this->onErrorResponse([
+                    'code'    => ResponseError::ERROR_106, // User already exists (email)
+                    'message' => __('errors.' . ResponseError::ERROR_106, locale: $this->language),
+                ]);
+            }
+        }
+
         if (empty($user)) {
 			try {
 				$user = $this->model()

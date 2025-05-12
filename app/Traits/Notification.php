@@ -30,101 +30,18 @@ trait Notification
 		?string $firebaseTitle = '',
 	): void
 	{
-		$receivers = $this->normalizeTokens($receivers);
+		// Convert the old 5-/6-arg signature into the new payload shape
+		$payload = is_array($data) ? $data : [];
+		$payload['title'] = $firebaseTitle ?: ($title ?? '');
+		$payload['body']  = $message;
 
-		dispatch(function () use ($receivers, $message, $title, $data, $userIds, $firebaseTitle) {
-			if (empty($receivers)) {
-				return;
-			}
-
-			\Log::info('[PushService] Notification Data', [
-				'receivers' => $receivers,
-				'title' => $title,
-				'message' => $message,
-				'data' => $data,
-				'userIds' => $userIds,
-				'firebaseTitle' => $firebaseTitle
-			]);
-
-
-			$type = data_get($data, 'order.type');
-
-			if (is_array($userIds) && count($userIds) > 0) {
-				\Log::info('[PushService] Storing Notification for Users', [
-					'userIds' => $userIds,
-					'type' => $type ?? data_get($data, 'type'),
-					'title' => $title,
-					'message' => $message,
-					'data' => $data
-				]);
-				(new PushNotificationService)->storeMany([
-					'type' 	=> $type ?? data_get($data, 'type'),
-					'title' => $title,
-					'body' 	=> $message,
-					'data' 	=> $data,
-					'sound' => 'default',
-				], $userIds);
-			}
-
-			$url = "https://fcm.googleapis.com/v1/projects/{$this->projectId()}/messages:send";
-
-			$token = $this->updateToken();
-
-			if (empty($token)) {
-				\Log::warning('[PushService] Skip FCM push – auth token unavailable');
-				return; // don't break main request flow
-			}
-
-			\Log::info('[PushService] Sending Notification to FCM 111', [
-				'url'   => $url,
-				'token' => substr($token, 0, 8) . '***'
-			]);
-
-			$headers = [
-				'Authorization' => "Bearer $token",
-				'Content-Type'  => 'application/json'
-			];
-
-			foreach ($receivers as $receiver) {
-				\Log::info('[PushService] inside', [
-					'receiver' => $receiver,
-					'firebaseTitle' => $firebaseTitle ?? $title,
-					'message' => $message,
-					'data' => [
-						'id' => (string)($data['id'] ?? ''),
-						'status' => (string)($data['status'] ?? ''),
-						'type' => (string)($data['type'] ?? '')
-					]
-				]);
-				Http::withHeaders($headers)->post($url, [ // $request =
-					'message' => [
-						'token' => $receiver,
-						'notification' => [
-							'title' => $firebaseTitle ?? $title,
-							'body' 	=> $message,
-						],
-						'data' => [
-							'id'     => (string)($data['id'] 	 ?? ''),
-							'status' => (string)($data['status'] ?? ''),
-							'type'   => (string)($data['type'] 	 ?? '')
-						],
-						'android' => [
-							'notification' => [
-								'sound' => 'default',
-							]
-						],
-						'apns' => [
-							'payload' => [
-								'aps' => [
-									'sound' => 'default'
-								]
-							]
-						]
-					]
-				]);
-			}
-
-		})->afterResponse();
+		// Delegate to the modern implementation that already
+		// (1) logs nicely, (2) cleans tokens, (3) downgrades log level
+		$this->sendNotificationSimple(
+			$this->normalizeTokens($receivers),
+			$payload,
+			$userIds
+		);
 	}
 
 	/**
