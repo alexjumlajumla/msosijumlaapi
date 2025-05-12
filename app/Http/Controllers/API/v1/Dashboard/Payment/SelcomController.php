@@ -174,34 +174,42 @@ class SelcomController extends PaymentBaseController
         // Remove trailing slash from base URL
         $frontUrl = rtrim(config('app.front_url'), '/');
         
-        if ($mStatus === 'success') {
-            $order = SelcomPayment::where('transid', $transID)->firstOrFail();
-            $payment = Payment::where('tag', Payment::TAG_SELCOM)->first();
-            $paymentPayload = PaymentPayload::where('payment_id', $payment?->id)->first();
-            
-            if (!$paymentPayload) {
-                throw new \Exception('Payment configuration not found');
-            }
+        $order = SelcomPayment::where('transid', $transID)->first();
 
-            $api = new Selcom($paymentPayload->payload);
-            $response = $api->orderStatus($order->order_id);
+        // Wallet top-up flow may not create SelcomPayment record
+        if (!$order) {
+            // Determine status based on request status param directly if API check is unavailable
+            $status = $mStatus === 'success' ? Transaction::STATUS_PAID : Transaction::CANCELED;
 
-            $status = match (data_get($response['data'][0], 'payment_status')) {
-                'cancelled', 'expired' => Transaction::CANCELED,
-                'COMPLETED' => Transaction::STATUS_PAID,
-                default => 'progress',
-            };
+            // Execute common after-hook logic to update wallet etc.
+            $this->service->afterHook($transID, $status);
 
-            $this->service->afterHook($order->transid, $status);
-            
-            // Redirect based on status and cart_id availability
-            if ($status === Transaction::STATUS_PAID) {
-                $to = "$frontUrl/orders";
-            } else {
-                $to = $cart_id ? "$frontUrl/restaurant/$cart_id/checkout" : "$frontUrl/orders";
-            }
+            $frontUrl = rtrim(config('app.front_url'), '/');
+            return Redirect::to("$frontUrl/wallet-histories");
+        }
+
+        $payment = Payment::where('tag', Payment::TAG_SELCOM)->first();
+        $paymentPayload = PaymentPayload::where('payment_id', $payment?->id)->first();
+        
+        if (!$paymentPayload) {
+            throw new \Exception('Payment configuration not found');
+        }
+
+        $api = new Selcom($paymentPayload->payload);
+        $response = $api->orderStatus($order->order_id);
+
+        $status = match (data_get($response['data'][0], 'payment_status')) {
+            'cancelled', 'expired' => Transaction::CANCELED,
+            'COMPLETED' => Transaction::STATUS_PAID,
+            default => 'progress',
+        };
+
+        $this->service->afterHook($order->transid, $status);
+        
+        // Redirect based on status and cart_id availability
+        if ($status === Transaction::STATUS_PAID) {
+            $to = "$frontUrl/orders";
         } else {
-            // Payment was cancelled or failed
             $to = $cart_id ? "$frontUrl/restaurant/$cart_id/checkout" : "$frontUrl/orders";
         }
 
