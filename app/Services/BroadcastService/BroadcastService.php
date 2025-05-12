@@ -8,6 +8,7 @@ use App\Models\Broadcast;
 use App\Services\CoreService;
 use App\Traits\Notification;
 use Illuminate\Support\Facades\Mail;
+use Spatie\Permission\Models\Role;
 
 class BroadcastService extends CoreService
 {
@@ -29,20 +30,39 @@ class BroadcastService extends CoreService
     {
         $groups   = $payload['groups'];      // ['admin','seller'] etc.
         $channels = $payload['channels'];    // ['push','email']
+        $customEmails = $payload['custom_emails'] ?? [];
 
-        $query = User::whereHas('roles', function ($q) use ($groups) {
-            $q->whereIn('name', $groups);
-        });
+        // Ensure referenced roles exist (idempotent)
+        foreach ($groups as $roleName) {
+            Role::findOrCreate($roleName);
+        }
+
+        $roleGroups = array_diff($groups, ['user']);
+
+        $query = User::query();
+
+        // Users with specific roles
+        if (!empty($roleGroups)) {
+            $query->whereHas('roles', function ($q) use ($roleGroups) {
+                $q->whereIn('name', $roleGroups);
+            });
+        }
+
+        // Include plain customers without any specific role when "user" requested
+        if (in_array('user', $groups)) {
+            $query->orWhereDoesntHave('roles');
+        }
 
         $stats = [
             'emailed' => 0,
             'pushed'  => 0,
             'total'   => 0,
+            'custom_emailed' => 0,
         ];
 
         $query->where(function ($q) {
             $q->whereNotNull('email')->orWhereNotNull('firebase_token');
-        })->chunkById(500, function ($users) use ($payload, $channels, &$stats) {
+        })->chunkById(500, function ($users) use ($payload, $channels, &$stats, $customEmails) {
             if (in_array('push', $channels)) {
                 $tokens   = [];
                 $userIds  = [];
@@ -85,12 +105,30 @@ class BroadcastService extends CoreService
             $stats['total'] += $users->count();
         });
 
+        // handle custom email recipients if provided
+        if (!empty($customEmails) && in_array('email', $channels)) {
+            foreach ($customEmails as $email) {
+                $addr = trim($email);
+                if (!filter_var($addr, FILTER_VALIDATE_EMAIL)) {
+                    continue;
+                }
+                try {
+                    Mail::to($addr)->queue(new BroadcastMailable($payload['title'], $payload['body']));
+                    $stats['emailed']++;
+                    $stats['custom_emailed']++;
+                } catch (\Throwable $e) {
+                    \Log::error('[Broadcast] custom email send failed', ['email' => $addr, 'err' => $e->getMessage()]);
+                }
+            }
+        }
+
         // Save broadcast stats
         $broadcast = Broadcast::create([
             'title'    => $payload['title'],
             'body'     => $payload['body'],
             'channels' => $channels,
             'groups'   => $groups,
+            'custom_emails' => array_values($customEmails),
             'stats'    => $stats,
         ]);
 

@@ -12,5 +12,6 @@ class Broadcast extends Model
         'channels' => 'array',
         'groups'   => 'array',
         'stats'    => 'array',
+        'custom_emails' => 'array',
     ];
 } 

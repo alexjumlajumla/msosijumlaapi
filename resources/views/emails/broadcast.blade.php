@@ -8,7 +8,7 @@
         <tr>
             <td style="text-align:center;">
                 <h2>{{ $title }}</h2>
-                <p style="font-size:16px; line-height:1.5;">{!! nl2br(e($body)) !!}</p>
+                <div style="font-size:16px; line-height:1.5;">{!! $body !!}</div>
             </td>
         </tr>
         <tr>

@@ -20,7 +20,7 @@ class BroadcastSendRequest extends FormRequest
             'channels' => 'required|array|min:1',
             'channels.*' => 'in:push,email',
             'groups'   => 'required|array|min:1',
-            'groups.*' => 'in:admin,seller,deliveryman,user',
+            'groups.*' => 'in:admin,seller,deliveryman,user,customer_care,product_manager,director,manager',
         ];
     }
 } 
