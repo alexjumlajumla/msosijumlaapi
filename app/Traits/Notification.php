@@ -670,4 +670,17 @@ trait Notification
 		}
 		return $normalizedTokens;
 	}
+
+	public function statusChange(int $id, ?string $status = null): array
+	{
+		return DB::transaction(function () use ($id, $status) {
+			// … entire original body …
+		});
+	}
+
+	public function create(array $data): array
+	{
+		$data += ['created_by' => auth('sanctum')->id()];
+		// …
+	}
 }

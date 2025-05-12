@@ -25,7 +25,14 @@ class DeliveryZoneController extends RestBaseController
 	public function getByShopId(int $shopId): array
 	{
 		try {
-			$deliveryZone = DeliveryZone::where('shop_id', $shopId)->firstOrFail();
+			$deliveryZone = DeliveryZone::where('shop_id', $shopId)->first();
+
+			if (!$deliveryZone) {
+				return [
+					'status' => false,
+					'code'   => ResponseError::ERROR_404,
+				];
+			}
 
 			return [
 				'status' => true,
