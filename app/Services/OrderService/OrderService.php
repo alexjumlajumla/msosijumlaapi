@@ -519,7 +519,7 @@ class OrderService extends CoreService implements OrderServiceInterface
 			}
 
 			/** @var User $user */
-			$user = User::with('deliveryManSetting')->find($deliveryman);
+			$user = User::with(['deliveryManSetting', 'shopDeliveryman'])->find($deliveryman);
 
 			if (!$user || !$user->hasRole('deliveryman')) {
 				return [
@@ -530,8 +530,15 @@ class OrderService extends CoreService implements OrderServiceInterface
 			}
 
 			if (
-				!auth('sanctum')->user()->hasRole('admin') && $user->invitations?->count() > 0
-				&& !$user->invitations?->where('shop_id', $order->shop_id)?->first()?->id
+				!auth('sanctum')->user()->hasRole('admin') && (
+					(
+						$user->invitations?->count() > 0 &&
+						!$user->invitations?->where('shop_id', $order->shop_id)?->first()?->id
+					) && (
+						// new pivot check – if no matching shop_deliveryman row
+						!$user->shopDeliveryman?->where('id', $order->shop_id)?->first()?->id
+					)
+				)
 			) {
 
 				return [
@@ -602,9 +609,15 @@ class OrderService extends CoreService implements OrderServiceInterface
 
 			/** @var User $user */
 			$user = auth('sanctum')->user();
-			$invitations = $user?->invitations;
+			$invitations     = $user?->invitations;
+			$deliverymanLinks = $user?->shopDeliveryman;
 
-			if ($invitations?->count() > 0 && !$invitations?->where('shop_id', $order->shop_id)?->first()?->id) {
+			$linkedToShop = (
+				($invitations?->where('shop_id', $order->shop_id)?->first()?->id ?? null) ||
+				($deliverymanLinks?->where('id', $order->shop_id)?->first()?->id ?? null)
+			);
+
+			if (!$linkedToShop) {
 				return [
 					'status'  => false,
 					'code'    => ResponseError::ERROR_212,

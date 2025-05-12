@@ -365,6 +365,16 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasOne(DeliveryManDeliveryZone::class);
     }
 
+    /**
+     * Pivot relation – shops that this user is attached to as delivery-man.
+     * Table: shop_deliveryman (shop_id, user_id, status, timestamps)
+     */
+    public function shopDeliveryman(): BelongsToMany
+    {
+        return $this->belongsToMany(Shop::class, 'shop_deliveryman', 'user_id', 'shop_id')
+            ->withPivot(['status', 'created_at', 'updated_at']);
+    }
+
       public function creditScores()
     {
         return $this->hasMany(CreditScore::class);
@@ -408,11 +418,16 @@ class User extends Authenticatable implements MustVerifyEmail
 					return $query->where(function ($q) use ($shopId) {
 						$q
 							->whereHas('invitations', fn($q) => $q->where('shop_id', $shopId))
-							->orWhereDoesntHave('invitations');
+							->orWhereHas('shopDeliveryman', fn($q) => $q->where('shop_id', $shopId))
+							->orWhere(function($sub){ $sub->whereDoesntHave('invitations')->whereDoesntHave('shopDeliveryman'); });
 					});
 				}
 
-				return $query->whereHas('invitations', fn($q) => $q->where('shop_id', $shopId));
+				return $query->where(function ($q) use ($shopId) {
+					$q
+						->whereHas('invitations', fn($q) => $q->where('shop_id', $shopId))
+						->orWhereHas('shopDeliveryman', fn($q) => $q->where('shop_id', $shopId));
+				});
             })
             ->when($addressCheckRequired, function ($query) use ($userIds) {
                 $query->whereIn('id', $userIds);
