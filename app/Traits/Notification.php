@@ -372,13 +372,21 @@ trait Notification
 
 	private function updateToken(): string
 	{
-		// Accepted locations for the service-account json
-		$paths = [
-			storage_path('app/google-service-account.json'),
-			storage_path('app/firebase/service-account.json'),
-		];
+		// Possible credential file locations (most-specific first). You can also
+		// set FIREBASE_CREDENTIALS_PATH in .env to point anywhere on disk.
+		$paths = array_filter([
+			// Custom override via environment variable
+			env('FIREBASE_CREDENTIALS_PATH'),
 
-		$credsPath = collect($paths)->first(fn($p) => file_exists($p));
+			// Common filenames we look for inside storage/app
+			storage_path('app/google-service-account.json'),      // singular "service"
+			storage_path('app/google-services-account.json'),     // plural   "services" (Play-style)
+
+			// Nested location that some deploy scripts use
+			storage_path('app/firebase/service-account.json'),
+		]);
+
+		$credsPath = collect($paths)->first(fn($p) => !empty($p) && file_exists($p));
 
 		if (!$credsPath) {
 			\Log::error('[PushService] Firebase credentials file not found', ['checked' => $paths]);
