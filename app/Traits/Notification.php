@@ -30,6 +30,8 @@ trait Notification
 		?string $firebaseTitle = '',
 	): void
 	{
+		$receivers = $this->normalizeTokens($receivers);
+
 		dispatch(function () use ($receivers, $message, $title, $data, $userIds, $firebaseTitle) {
 			if (empty($receivers)) {
 				return;
@@ -211,10 +213,44 @@ trait Notification
 			$processedReceivers = [];
 			foreach ($receivers as $receiver) {
 				if (is_array($receiver)) {
-					$receiver = $receiver[0] ?? null;
+					// Nested arrays – flatten them
+					foreach ($receiver as $tokenItem) {
+						if (!empty($tokenItem) && is_string($tokenItem)) {
+							$processedReceivers[] = $tokenItem;
+						}
+					}
+					continue;
 				}
-				if (!empty($receiver) && is_string($receiver)) {
-					$processedReceivers[] = $receiver;
+
+				if (is_string($receiver) && !empty($receiver)) {
+					$trimmed = trim($receiver);
+
+					// If token looks like a JSON array (e.g. "[\"tok1\",\"tok2\"]") decode it
+					if (str_starts_with($trimmed, '[') && str_ends_with($trimmed, ']')) {
+						$decoded = json_decode($trimmed, true);
+						if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+							foreach ($decoded as $tok) {
+								if (!empty($tok) && is_string($tok)) {
+									$processedReceivers[] = $tok;
+								}
+							}
+							continue;
+						}
+					}
+
+					// If token contains comma-separated list, split it
+					if (str_contains($trimmed, ',')) {
+						foreach (explode(',', $trimmed) as $tok) {
+							$tok = trim($tok, " \"'[]");
+							if (!empty($tok)) {
+								$processedReceivers[] = $tok;
+							}
+						}
+						continue;
+					}
+
+					// Fallback – assume the string itself is a single token
+					$processedReceivers[] = $trimmed;
 				}
 			}
 
@@ -391,8 +427,15 @@ trait Notification
 	{
 		try {
 			return Cache::remember('firebase_auth_token', 300, function () {
+		$serviceAccount = storage_path('app/google-service-account.json');
+		
+		if (!file_exists($serviceAccount)) {
+			\Log::error('[PushService] Firebase credentials file not found', ['path' => $serviceAccount]);
+			throw new \Exception('Firebase credentials file not found');
+		}
+		
 		$googleClient = new Client;
-		$googleClient->setAuthConfig(storage_path('app/google-service-account.json'));
+		$googleClient->setAuthConfig($serviceAccount);
 		$googleClient->addScope('https://www.googleapis.com/auth/firebase.messaging');
 
 		$token = $googleClient->fetchAccessTokenWithAssertion()['access_token'];
@@ -549,9 +592,17 @@ trait Notification
 		}
 	}
 
-	private function projectId()
+	private function projectId(): string
 	{
-		return Settings::where('key', 'project_id')->value('value');
+		// Try DB first, then env variable for flexibility during installation / local dev
+		$projectId = Settings::where('key', 'project_id')->value('value');
+
+		if (empty($projectId)) {
+			$projectId = env('FIREBASE_PROJECT_ID', '');
+			\Log::info('[PushService] projectId fallback to env', ['value' => $projectId]);
+		}
+
+		return (string)$projectId;
 	}
 
 	/**
@@ -626,5 +677,49 @@ trait Notification
 				'trace' => $e->getTraceAsString()
 			]);
 		}
+	}
+
+	private function normalizeTokens(array $tokens): array
+	{
+		$normalizedTokens = [];
+		foreach ($tokens as $token) {
+			if (is_array($token)) {
+				foreach ($token as $item) {
+					if (!empty($item) && is_string($item)) {
+						$normalizedTokens[] = $item;
+					}
+				}
+			} elseif (is_string($token) && !empty($token)) {
+				$trimmed = trim($token);
+
+				// If token looks like a JSON array (e.g. "[\"tok1\",\"tok2\"]") decode it
+				if (str_starts_with($trimmed, '[') && str_ends_with($trimmed, ']')) {
+					$decoded = json_decode($trimmed, true);
+					if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+						foreach ($decoded as $tok) {
+							if (!empty($tok) && is_string($tok)) {
+								$normalizedTokens[] = $tok;
+							}
+						}
+						continue;
+					}
+				}
+
+				// If token contains comma-separated list, split it
+				if (str_contains($trimmed, ',')) {
+					foreach (explode(',', $trimmed) as $tok) {
+						$tok = trim($tok, " \"'[]");
+						if (!empty($tok)) {
+							$normalizedTokens[] = $tok;
+						}
+					}
+					continue;
+				}
+
+				// Fallback – assume the string itself is a single token
+				$normalizedTokens[] = $trimmed;
+			}
+		}
+		return $normalizedTokens;
 	}
 }
