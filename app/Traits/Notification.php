@@ -372,35 +372,31 @@ trait Notification
 
 	private function updateToken(): string
 	{
-		try {
-			return Cache::remember('firebase_auth_token', 300, function () {
-		$serviceAccount = storage_path('app/google-service-account.json');
-		
-		if (!file_exists($serviceAccount)) {
-			\Log::error('[PushService] Firebase credentials file not found', ['path' => $serviceAccount]);
-			// Return empty string so caller can decide to skip the remote call but continue business logic
+		// Accepted locations for the service-account json
+		$paths = [
+			storage_path('app/google-service-account.json'),
+			storage_path('app/firebase/service-account.json'),
+		];
+
+		$credsPath = collect($paths)->first(fn($p) => file_exists($p));
+
+		if (!$credsPath) {
+			\Log::error('[PushService] Firebase credentials file not found', ['checked' => $paths]);
 			return '';
 		}
-		
-		$googleClient = new Client;
-		$googleClient->setAuthConfig($serviceAccount);
-		$googleClient->addScope('https://www.googleapis.com/auth/firebase.messaging');
 
-		$token = $googleClient->fetchAccessTokenWithAssertion()['access_token'];
-				
-				if (empty($token)) {
-					\Log::error('[PushService] Failed to get Firebase token - empty token returned');
-					throw new \Exception('Empty Firebase token returned');
-				}
-
-		return $token;
-			});
+		try {
+			$googleClient = new Client;
+			$googleClient->setAuthConfig($credsPath);
+			$googleClient->addScope('https://www.googleapis.com/auth/firebase.messaging');
+			$token = $googleClient->fetchAccessTokenWithAssertion()['access_token'] ?? '';
+			if (empty($token)) {
+				\Log::error('[PushService] Empty access_token from Google credentials');
+			}
+			return $token;
 		} catch (\Throwable $e) {
-			\Log::error('[PushService] Failed to get Firebase token', [
-				'error' => $e->getMessage(),
-				'trace' => $e->getTraceAsString()
-			]);
-			throw $e;
+			\Log::error('[PushService] updateToken failed', ['err' => $e->getMessage()]);
+			return '';
 		}
 	}
 
