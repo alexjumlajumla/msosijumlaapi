@@ -73,9 +73,17 @@ class BroadcastService extends CoreService
 
             if (in_array('email', $channels)) {
                 foreach ($users as $u) {
-                    if (!$u->email) continue;
-                    Mail::to($u->email)->queue(new BroadcastMailable($payload['title'], $payload['body']));
-                    $stats['emailed']++;
+                    $addr = trim($u->email);
+                    if (!filter_var($addr, FILTER_VALIDATE_EMAIL)) {
+                        continue; // skip invalid
+                    }
+
+                    try {
+                        Mail::to($addr)->queue(new BroadcastMailable($payload['title'], $payload['body']));
+                        $stats['emailed']++;
+                    } catch (\Throwable $e) {
+                        \Log::error('[Broadcast] email send failed', ['email' => $addr, 'err' => $e->getMessage()]);
+                    }
                 }
             }
             $stats['total'] += $users->count();
