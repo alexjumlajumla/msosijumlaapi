@@ -97,17 +97,36 @@ class LoanService extends CoreService
 
                 $amount = data_get($data, 'amount');
 
-                // Create repayment record
+                $method = data_get($data, 'payment_method');
+
+                if ($method === 'selcom') {
+                    // Defer repayment recording until Selcom callback succeeds
+                    // Prepare selcom payment via existing SelcomService
+                    $selcomService = app(\App\Services\PaymentService\SelcomService::class);
+                    $redirectUrl   = $selcomService->loanRepaymentProcess([
+                        'loan_id'      => $loan->id,
+                        'amount'       => $amount,
+                        'user_id'      => $loan->user_id,
+                        'payment_type' => 'selcom',
+                    ]);
+
+                    return [
+                        'status'        => true,
+                        'code'          => ResponseError::NO_ERROR,
+                        'redirect_url'  => $redirectUrl,
+                    ];
+                }
+
+                // Immediate record for wallet repayment
                 $repayment = $loan->repayments()->create([
                     'user_id' => $loan->user_id,
                     'amount' => $amount,
-                    'payment_method' => data_get($data, 'payment_method'),
+                    'payment_method' => $method,
                     'recorded_by' => auth('sanctum')->id(),
                     'paid_at' => now(),
                 ]);
 
-                // If payment is through wallet, deduct from wallet
-                if (data_get($data, 'payment_method') === 'wallet') {
+                if ($method === 'wallet') {
                     (new WalletHistoryService)->create([
                         'type'   => 'withdraw',
                         'price'  => $amount,

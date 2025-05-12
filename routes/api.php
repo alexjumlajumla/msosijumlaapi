@@ -1514,7 +1514,7 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
     });
 
     /* Loans routes inside dashboard/admin */
-    Route::group(['prefix' => 'dashboard/admin', 'middleware' => ['sanctum.check', 'role:admin']], function () {
+    Route::group(['prefix' => 'dashboard/admin', 'middleware' => ['sanctum.check', 'role:admin|manager']], function () {
         // Loan CRUD
         Route::apiResource('loans', Admin\LoanController::class)->only(['index','store','destroy']);
         // Loan repayments

@@ -54,6 +54,10 @@ class LoanRepaymentController extends SellerBaseController
 
         $result = $this->service->recordRepayment($data);
 
+        if (isset($result['redirect_url'])) {
+            return $this->successResponse(__('web.go_to_payment'), ['redirect_url' => $result['redirect_url']]);
+        }
+
         return $result['status']
             ? $this->successResponse(__('web.record_was_successfully_created'), $result['data'])
             : $this->onErrorResponse($result);
