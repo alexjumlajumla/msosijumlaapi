@@ -1249,6 +1249,9 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
             Route::get('notifications/drop/all',    [Admin\NotificationController::class, 'dropAll']);
             Route::get('notifications/restore/all', [Admin\NotificationController::class, 'restoreAll']);
             Route::get('notifications/truncate/db', [Admin\NotificationController::class, 'truncate']);
+            
+            /* Broadcasts */
+            Route::post('broadcasts/send', [Admin\BroadcastController::class, 'send']);
 
 			/* Email Subscriptions */
 			Route::get('email-subscriptions',               [Admin\SubscriptionController::class, 'emailSubscriptions']);
