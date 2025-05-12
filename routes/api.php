@@ -704,25 +704,41 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
             Route::get('shop-payments/delete', [Seller\ShopPaymentController::class, 'destroy']);
             Route::apiResource('shop-payments', Seller\ShopPaymentController::class);
 
+            /* Loans & Repayments */
+            Route::apiResource('loans', Seller\LoanController::class)->only(['index','show']);
+            Route::apiResource('loan-repayments', Seller\LoanRepaymentController::class)->only(['index','store']);
+
             /* Order Refunds */
             Route::get('order-refunds/paginate', [Seller\OrderRefundsController::class, 'paginate']);
             Route::delete('order-refunds/delete', [Seller\OrderRefundsController::class, 'destroy']);
             Route::apiResource('order-refunds', Seller\OrderRefundsController::class);
+            Route::get('order-refunds/drop/all',    [Seller\OrderRefundsController::class, 'dropAll']);
+            Route::get('order-refunds/restore/all', [Seller\OrderRefundsController::class, 'restoreAll']);
+            Route::get('order-refunds/truncate/db', [Seller\OrderRefundsController::class, 'truncate']);
 
             /* Shop Working Days */
             Route::apiResource('shop-working-days', Seller\ShopWorkingDayController::class)
                 ->except('store');
             Route::delete('shop-working-days/delete', [Seller\ShopWorkingDayController::class, 'destroy']);
+            Route::get('shop-working-days/drop/all',    [Seller\ShopWorkingDayController::class, 'dropAll']);
+            Route::get('shop-working-days/restore/all', [Seller\ShopWorkingDayController::class, 'restoreAll']);
+            Route::get('shop-working-days/truncate/db', [Seller\ShopWorkingDayController::class, 'truncate']);
 
             /* Shop Closed Days */
             Route::apiResource('shop-closed-dates', Seller\ShopClosedDateController::class)
                 ->except('store');
             Route::delete('shop-closed-dates/delete', [Seller\ShopClosedDateController::class, 'destroy']);
+            Route::get('shop-closed-dates/drop/all',    [Seller\ShopClosedDateController::class, 'dropAll']);
+            Route::get('shop-closed-dates/restore/all', [Seller\ShopClosedDateController::class, 'restoreAll']);
+            Route::get('shop-closed-dates/truncate/db', [Seller\ShopClosedDateController::class, 'truncate']);
 
             /* Payouts */
             Route::apiResource('payouts', Seller\PayoutsController::class);
-
-            Route::delete('payouts/delete', [Seller\PayoutsController::class, 'destroy']);
+            Route::post('payouts/{id}/status',      [Seller\PayoutsController::class, 'statusChange']);
+            Route::delete('payouts/delete',         [Seller\PayoutsController::class, 'destroy']);
+            Route::get('payouts/drop/all',          [Seller\PayoutsController::class, 'dropAll']);
+            Route::get('payouts/restore/all',       [Seller\PayoutsController::class, 'restoreAll']);
+            Route::get('payouts/truncate/db',       [Seller\PayoutsController::class, 'truncate']);
 
 			/* Report Orders */
 			Route::get('order/report',              [Seller\OrderReportController::class, 'report']);
@@ -737,6 +753,9 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
             /* Receipts */
             Route::apiResource('receipts',Seller\ReceiptController::class);
             Route::delete('receipts/delete',        [Seller\ReceiptController::class, 'destroy']);
+            Route::get('receipts/drop/all',    [Seller\ReceiptController::class, 'dropAll']);
+            Route::get('receipts/restore/all', [Seller\ReceiptController::class, 'restoreAll']);
+            Route::get('receipts/truncate/db', [Seller\ReceiptController::class, 'truncate']);
 
             /* Galleries */
             Route::apiResource('galleries',Seller\ShopGalleriesController::class)->except('show');
