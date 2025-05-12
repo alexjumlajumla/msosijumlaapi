@@ -120,8 +120,47 @@ trait Notification
 		})->afterResponse();
 	}
 
+	/**
+	 * Flexible public method that supports both the legacy (<= Laravel v10) 5/6-parameter
+	 * signature and the newer 3-parameter signature introduced later on.  
+	 *   Legacy:   sendNotification(array $tokens, string $message, string|null $title, mixed $data, array $userIds = [], ?string $firebaseTitle = '')
+	 *   Current:  sendNotification(array $tokens, mixed $dataArray, array $userIds = [])
+	 *
+	 * Any call with more than 3 arguments is automatically forwarded to the legacy
+	 * implementation (sendNotification1). Otherwise it is handled by the streamlined
+	 * implementation that expects the newer 3-argument form.
+	 *
+	 * This wrapper helps prevent "Too many arguments" fatal errors and guarantees
+	 * backward compatibility so that older service classes (OrderService, etc.) keep
+	 * working without immediate refactoring.
+	 */
+	public function sendNotification(...$args): void
+	{
+		// If more than 3 arguments, assume legacy call signature.
+		if (count($args) > 3) {
+			// Legacy method already contains all required logic.
+			$this->sendNotification1(...$args);
+			return;
+		}
 
-	public function sendNotification(
+		// Modern (new) signature expects exactly 1-3 arguments.
+		[$receivers, $data, $userIds] = $args + [0 => [], 1 => [], 2 => []];
+
+		$this->sendNotificationSimple(
+			is_array($receivers) ? $receivers : [$receivers],
+			$data,
+			is_array($userIds) ? $userIds : [$userIds]
+		);
+	}
+
+	/**
+	 * New streamlined implementation kept under a separate name so that the public
+	 * sendNotification() wrapper can smartly delegate between versions.
+	 *
+	 * DO NOT call this method directly outside this trait – use sendNotification()
+	 * to ensure backward compatibility.
+	 */
+	public function sendNotificationSimple(
 		array   $receivers = [],
 		mixed   $data = [],
 		array   $userIds = []
@@ -132,28 +171,28 @@ trait Notification
 				\Log::error('[PushService] No receivers provided for notification');
 				return;
 			}
-	
+
 			\Log::info('[PushService] Preparing notification for ' . count($receivers) . ' receivers', [
-				'title' => $data['title'] ?? '',
-				'body' => $data['body'] ?? '',
+				'title'   => is_array($data) ? $data['title'] ?? '' : '',
+				'body'    => is_array($data) ? $data['body']  ?? '' : $data,
 				'userIds' => $userIds
 			]);
-	
+
 			// Store notification in database if userIds are provided
-			if (!empty($userIds)) {
+			if (!empty($userIds) && is_array($userIds)) {
 				try {
 					foreach ($userIds as $userId) {
 						PushNotification::create([
 							'user_id' => $userId,
-							'type' => $data['type'] ?? 'system',
-							'title' => $data['title'] ?? '',
-							'body' => $data['body'] ?? '',
-					'data' => $data
-				]);
+							'type'    => is_array($data) ? ($data['type'] ?? 'system') : 'system',
+							'title'   => is_array($data) ? ($data['title'] ?? '')          : '',
+							'body'    => is_array($data) ? ($data['body']  ?? '')          : (string)$data,
+							'data'    => $data,
+						]);
 					}
 				} catch (\Exception $e) {
 					\Log::error('[PushService] Failed to store notification: ' . $e->getMessage());
-			}
+				}
 			}
 
 			// Get Firebase auth token
@@ -168,7 +207,7 @@ trait Notification
 				return;
 			}
 
-			// Process receivers to ensure they are strings
+			// Ensure tokens are individual strings
 			$processedReceivers = [];
 			foreach ($receivers as $receiver) {
 				if (is_array($receiver)) {
@@ -184,20 +223,22 @@ trait Notification
 				return;
 			}
 
-			\Log::info('[PushService] Sending to ' . count($processedReceivers) . ' tokens');
-
 			$successCount = 0;
 			$failureCount = 0;
+
+			// Build base notification payload pieces once
+			$notificationBody  = is_array($data) ? ($data['body']  ?? '') : (string)$data;
+			$notificationTitle = is_array($data) ? ($data['title'] ?? '') : '';
 
 			// Send to each token individually
 			foreach ($processedReceivers as $token) {
 				try {
-					// Convert all data values to strings for FCM
+					// Ensure data values are strings for FCM
 					$formattedData = [];
 					if (is_array($data)) {
 						foreach ($data as $key => $value) {
-							if ($key === 'title' || $key === 'body') {
-								continue; // Skip these as they're part of notification
+							if (in_array($key, ['title', 'body'], true)) {
+								continue; // Skip title/body keys
 							}
 							$formattedData[$key] = is_scalar($value) ? (string)$value : json_encode($value);
 						}
@@ -205,97 +246,92 @@ trait Notification
 						$formattedData['message'] = (string)$data;
 					}
 
-					$notification = [
-					'message' => [
-							'token' => $token, // Individual token, not array
-						'notification' => [
-								'title' => $data['title'] ?? '',
-								'body' => $data['body'] ?? '',
-						],
-							'data' => $formattedData,
-						'android' => [
-								'priority' => 'high',
+					$payload = [
+						'message' => [
+							'token'        => $token,
 							'notification' => [
-								'sound' => 'default',
+								'title' => $notificationTitle,
+								'body'  => $notificationBody,
+							],
+							'data' => $formattedData,
+							'android' => [
+								'priority'      => 'high',
+								'notification'  => [
+									'sound'      => 'default',
 									'channel_id' => 'high_importance_channel'
-							]
-						],
-						'apns' => [
+								]
+							],
+							'apns' => [
 								'headers' => [
 									'apns-priority' => '10'
 								],
-							'payload' => [
-								'aps' => [
-										'sound' => 'default',
-										'badge' => 1,
+								'payload' => [
+									'aps' => [
+										'sound'             => 'default',
+										'badge'             => 1,
 										'content-available' => 1
+									]
 								]
 							]
 						]
-					]
 					];
-	
-					$response = Http::withHeaders([
-						'Authorization' => 'Bearer ' . $authToken,
-						'Content-Type' => 'application/json',
-					])
-					->timeout(10)
-					->post('https://fcm.googleapis.com/v1/projects/' . $this->projectId() . '/messages:send', $notification);
+
+					$response = \Illuminate\Support\Facades\Http::withHeaders([
+							'Authorization' => 'Bearer ' . $authToken,
+							'Content-Type'  => 'application/json',
+						])
+						->timeout(10)
+						->post('https://fcm.googleapis.com/v1/projects/' . $this->projectId() . '/messages:send', $payload);
 
 					if ($response->successful()) {
 						$successCount++;
 					} else {
 						$failureCount++;
-						\Log::error('[PushService] Failed to send notification to token', [
-							'token_prefix' => substr($token, 0, 15) . '...',
-							'status' => $response->status(),
-							'response' => $response->json()
+						\Log::error('[PushService] Failed to send notification', [
+							'status'   => $response->status(),
+							'response' => $response->json(),
+							'token'    => substr($token, 0, 15) . '...'
 						]);
-						
-						// Handle specific FCM errors
-						$error = $response->json()['error']['message'] ?? null;
-						if ($error && (
-							strpos($error, 'InvalidRegistration') !== false ||
-							strpos($error, 'NotRegistered') !== false ||
-							strpos($error, 'MismatchSenderId') !== false
-						)) {
-							\Log::warning('[PushService] Invalid token detected, should be removed', [
-								'token_prefix' => substr($token, 0, 15) . '...',
-								'error' => $error
+
+						// Handle specific FCM errors so we can clean up invalid tokens
+						$errorMessage = $response->json()['error']['message'] ?? null;
+						if ($errorMessage && (
+								str_contains($errorMessage, 'InvalidRegistration') ||
+								str_contains($errorMessage, 'NotRegistered') ||
+								str_contains($errorMessage, 'MismatchSenderId')
+							)) {
+							\Log::warning('[PushService] Invalid token detected – removing from user profile', [
+								'token' => substr($token, 0, 15) . '...',
+								'error' => $errorMessage,
 							]);
-							
-							// Try to find and remove the invalid token
+
 							try {
 								$user = \App\Models\User::where('firebase_token', $token)->first();
 								if ($user) {
 									$user->update(['firebase_token' => null]);
 									\Log::info("[PushService] Removed invalid token from user #{$user->id}");
 								}
-							} catch (\Exception $e) {
+							} catch (\Throwable $e) {
 								\Log::error('[PushService] Failed to remove invalid token: ' . $e->getMessage());
 							}
 						}
 					}
-				} catch (\Exception $e) {
+				} catch (\Throwable $e) {
 					$failureCount++;
-					\Log::error('[PushService] Exception sending notification to token', [
-						'token_prefix' => substr($token, 0, 15) . '...',
-						'error' => $e->getMessage()
-				]);
-			}
+					\Log::error('[PushService] Exception while sending notification', [
+						'error' => $e->getMessage(),
+						'token' => substr($token, 0, 15) . '...'
+					]);
+				}
 			}
 
-			\Log::info('[PushService] Notification sending complete', [
+			\Log::info('[PushService] Notification dispatch complete', [
 				'success' => $successCount,
 				'failures' => $failureCount,
-				'total' => count($processedReceivers)
+				'total'    => count($processedReceivers)
 			]);
 		})->afterResponse();
 	}
-	
-
-
-
 
 	public function sendAllNotification(?string $title = null, mixed $data = [], ?string $firebaseTitle = ''): void
 	{
