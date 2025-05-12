@@ -66,6 +66,11 @@ Log::info('Test log works! 333333333333333333333');
         $host = request()->getSchemeAndHttpHost();
         $trxRef = "$order->id-" . time();
 
+        // Validate required params for wallet top-up or other flow
+        if (!$order && !data_get($data, 'wallet_id')) {
+            throw new Exception('Invalid request parameters');
+        }
+
         //return $trxRef;
         $redirectUrl  = "$host/selcom-result?&status=success&trxRef=$trxRef&" . (
             data_get($data, 'parcel_id') ? "parcel_id=$order->id" : "cart_id=$order->id"
