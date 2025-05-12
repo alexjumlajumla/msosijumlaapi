@@ -4,6 +4,7 @@ namespace App\Services\BroadcastService;
 
 use App\Mail\BroadcastMailable;
 use App\Models\User;
+use App\Models\Broadcast;
 use App\Services\CoreService;
 use App\Traits\Notification;
 use Illuminate\Support\Facades\Mail;
@@ -72,6 +73,28 @@ class BroadcastService extends CoreService
             $stats['total'] += $users->count();
         });
 
-        return $stats;
+        // Save broadcast stats
+        $broadcast = Broadcast::create([
+            'title'    => $payload['title'],
+            'body'     => $payload['body'],
+            'channels' => $channels,
+            'groups'   => $groups,
+            'stats'    => $stats,
+        ]);
+
+        return [
+            'id'    => $broadcast->id,
+            'stats' => $stats,
+        ];
+    }
+
+    /**
+     * Resend an existing broadcast by its ID.
+     */
+    public function resend(int $id): array
+    {
+        $broadcast = Broadcast::findOrFail($id);
+
+        return $this->send($broadcast->toArray());
     }
 } 

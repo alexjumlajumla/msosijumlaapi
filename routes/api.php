@@ -1251,7 +1251,9 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
             Route::get('notifications/truncate/db', [Admin\NotificationController::class, 'truncate']);
             
             /* Broadcasts */
-            Route::post('broadcasts/send', [Admin\BroadcastController::class, 'send']);
+            Route::get('broadcasts',              [Admin\BroadcastController::class, 'index']);
+            Route::post('broadcasts/send',        [Admin\BroadcastController::class, 'send']);
+            Route::post('broadcasts/{id}/resend', [Admin\BroadcastController::class, 'resend']);
 
 			/* Email Subscriptions */
 			Route::get('email-subscriptions',               [Admin\SubscriptionController::class, 'emailSubscriptions']);
