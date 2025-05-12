@@ -429,7 +429,7 @@ class User extends Authenticatable implements MustVerifyEmail
 						->orWhereHas('shopDeliveryman', fn($q) => $q->where('shop_id', $shopId));
 				});
             })
-            ->when($addressCheckRequired, function ($query) use ($userIds) {
+            ->when($addressCheckRequired && count($userIds) > 0, function ($query) use ($userIds) {
                 $query->whereIn('id', $userIds);
             })
             ->when(data_get($filter, 'empty-shop'), function ($query) {
@@ -520,7 +520,12 @@ class User extends Authenticatable implements MustVerifyEmail
 
             })
             ->when(isset($filter['active']), fn($q) => $q->where('active', $filter['active']))
-            ->when(data_get($filter, 'exist_token'), fn($query) => $query->whereNotNull('firebase_token'))
+            ->when(data_get($filter, 'exist_token'), function ($query) {
+                $query->whereNotNull('firebase_token')
+                      ->where('firebase_token', '!=', '')
+                      ->where('firebase_token', '!=', '[]')
+                      ->where('firebase_token', '!=', 'null');
+            })
             ->when(data_get($filter, 'walletSort'), function ($q, $walletSort) use($filter) {
                 $q->whereHas('wallet', function ($q) use($walletSort, $filter) {
                     $q->orderBy($walletSort, data_get($filter, 'sort', 'desc'));
