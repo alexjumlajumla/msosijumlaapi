@@ -70,9 +70,14 @@ trait Notification
 
 			$token = $this->updateToken();
 
+			if (empty($token)) {
+				\Log::warning('[PushService] Skip FCM push – auth token unavailable');
+				return; // don't break main request flow
+			}
+
 			\Log::info('[PushService] Sending Notification to FCM 111', [
-				'url' => $url,
-				'token' => $token
+				'url'   => $url,
+				'token' => substr($token, 0, 8) . '***'
 			]);
 
 			$headers = [
@@ -431,7 +436,8 @@ trait Notification
 		
 		if (!file_exists($serviceAccount)) {
 			\Log::error('[PushService] Firebase credentials file not found', ['path' => $serviceAccount]);
-			throw new \Exception('Firebase credentials file not found');
+			// Return empty string so caller can decide to skip the remote call but continue business logic
+			return '';
 		}
 		
 		$googleClient = new Client;
