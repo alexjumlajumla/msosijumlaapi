@@ -328,34 +328,59 @@ trait Notification
 						$successCount++;
 					} else {
 						$failureCount++;
-						\Log::error('[PushService] Failed to send notification', [
-							'status'   => $response->status(),
-							'response' => $response->json(),
-							'token'    => substr($token, 0, 15) . '...'
-						]);
 
 						// Handle specific FCM errors so we can clean up invalid tokens
-						$errorMessage = $response->json()['error']['message'] ?? null;
+						$isKnownBadTokenError = false;
+						$errorData = $response->json();
+						$errorMessage = $errorData['error']['message'] ?? null;
+						
 						if ($errorMessage && (
 								str_contains($errorMessage, 'InvalidRegistration') ||
 								str_contains($errorMessage, 'NotRegistered') ||
 								str_contains($errorMessage, 'MismatchSenderId')
 							)) {
+							$isKnownBadTokenError = true;
 							\Log::warning('[PushService] Invalid token detected – removing from user profile', [
 								'token' => substr($token, 0, 15) . '...',
 								'error' => $errorMessage,
 							]);
 
 							try {
-								$user = \App\Models\User::where('firebase_token', $token)->first();
+								$user = \App\Models\User::where('firebase_token', $token)->orWhereJsonContains('firebase_token', $token)->first();
 								if ($user) {
-									$user->update(['firebase_token' => null]);
+									// Handle both single token string and array of tokens
+									$currentToken = $user->firebase_token;
+									$newToken = null;
+									if (is_array($currentToken)) {
+										$newToken = array_values(array_filter($currentToken, fn($t) => $t !== $token));
+										if (empty($newToken)) {
+											$newToken = null; // Set to null if array becomes empty
+										}
+									} // else: if it was a single string, setting to null is correct
+									
+									$user->update(['firebase_token' => $newToken]);
 									\Log::info("[PushService] Removed invalid token from user #{$user->id}");
 								}
 							} catch (\Throwable $e) {
 								\Log::error('[PushService] Failed to remove invalid token: ' . $e->getMessage());
 							}
 						}
+
+						// Log as ERROR only if it's not a known bad token error being handled
+						if (!$isKnownBadTokenError) {
+							\Log::error('[PushService] Failed to send notification', [
+								'status'   => $response->status(),
+								'response' => $errorData, // Use cached JSON data
+								'token'    => substr($token, 0, 15) . '...'
+							]);
+						} else {
+                            // Optionally log handled bad token errors at a lower level, e.g., INFO
+                            \Log::info('[PushService] Handled known bad token error', [
+                                'status'   => $response->status(),
+								'response' => $errorData, 
+                                'token'    => substr($token, 0, 15) . '...'
+                            ]);
+                        }
 					}
 				} catch (\Throwable $e) {
 					$failureCount++;
