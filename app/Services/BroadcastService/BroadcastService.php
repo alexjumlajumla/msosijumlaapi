@@ -48,17 +48,25 @@ class BroadcastService extends CoreService
             $q->whereNotNull('email')->orWhereNotNull('firebase_token');
         })->chunkById(500, function ($users) use ($payload, $channels, &$stats) {
             if (in_array('push', $channels)) {
-                $tokens = [];
+                $tokens   = [];
+                $userIds  = [];
                 foreach ($users as $u) {
                     if (empty($u->firebase_token)) continue;
+                    $userIds[] = $u->id;
                     $tokens = array_merge($tokens, is_array($u->firebase_token) ? $u->firebase_token : [$u->firebase_token]);
                 }
                 if (!empty($tokens)) {
-                    $this->sendNotificationSimple($tokens, [
-                        'title' => $payload['title'],
-                        'body'  => $payload['body'],
-                        'type'  => 'broadcast',
-                    ]);
+                    $this->sendNotification(
+                        $tokens,
+                        $payload['body'], // message
+                        $payload['title'],
+                        [
+                            'id'      => 0,
+                            'type'    => 'broadcast',
+                            'channels'=> $channels,
+                        ] + $payload,
+                        $userIds,
+                    );
                     $stats['pushed'] += count($tokens);
                 }
             }
