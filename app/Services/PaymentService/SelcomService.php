@@ -50,21 +50,28 @@ Log::info('Test log works! 333333333333333333333');
 
 								Log::info('555555' . $payment);
 
-        /** @var Order|ParcelOrder $order */
+        /**
+         * Determine the primary model for which payment is being initiated.
+         *  1. Parcel order  → ParcelOrder model
+         *  2. Cart checkout → Cart model
+         *  3. Wallet top-up → $order will be null (handled below)
+         */
+        /** @var Order|ParcelOrder|null $order */
         $order = data_get($data, 'parcel_id')
-			? ParcelOrder::find(data_get($data, 'parcel_id'))
-			: Cart::find(data_get($data, 'cart_id'));
+            ? ParcelOrder::find(data_get($data, 'parcel_id'))
+            : Cart::find(data_get($data, 'cart_id'));
 
         [$key, $before] = $this->getPayload($data, $payload);
-        $modelId 		= data_get($before, 'model_id');
-        $totalPrice = data_get($before, 'total_price'); 
-        // $totalPrice = $order->rate_total_price; //round($order->rate_total_price * 100, 1);
+        $modelId     = data_get($before, 'model_id');
+        $totalPrice  = data_get($before, 'total_price');
 		
 										Log::info('6666666' . $payment);
 
 
-        $host = request()->getSchemeAndHttpHost();
-        $trxRef = "$order->id-" . time();
+        $host   = request()->getSchemeAndHttpHost();
+
+        // Transaction reference
+        $trxRef = ($order?->id ?? $modelId) . '-' . time();
 
         // Validate required params for wallet top-up or other flow
         if (!$order && !data_get($data, 'wallet_id')) {
@@ -72,35 +79,37 @@ Log::info('Test log works! 333333333333333333333');
         }
 
         //return $trxRef;
-        $redirectUrl  = "$host/selcom-result?&status=success&trxRef=$trxRef&" . (
-            data_get($data, 'parcel_id') ? "parcel_id=$order->id" : "cart_id=$order->id"
-        );
-        
-        //return $redirectUrl;
+        if ($order) {
+            // Parcel | cart payment path
+            $idParam = data_get($data, 'parcel_id') ? "parcel_id={$order->id}" : "cart_id={$order->id}";
+        } else {
+            // Wallet top-up path
+            $idParam = "wallet_id=" . data_get($data, 'wallet_id');
+        }
 
-        $cancelUrl  = $redirectUrl; //"$host/selcom-result?&status=error&trxRef=$trxRef&" . (
-        //     data_get($data, 'parcel_id') ? "parcel_id=$order->id" : "cart_id=$order->id"
-        // );
+        $redirectUrl = "$host/selcom-result?status=success&trxRef=$trxRef&$idParam";
+        $cancelUrl   = "$host/selcom-result?status=error&trxRef=$trxRef&$idParam";
 
-        $user       = auth('sanctum')->user();
+        $authUser = auth('sanctum')->user();
 
         // Fix webhook URL format to properly handle payment callbacks
         $webhookUrl = "$host/api/v1/webhook/selcom/payment?trxRef=$trxRef";
         
         $api = new Selcom($payload, $redirectUrl, $cancelUrl, $webhookUrl);
         $response =  $api->cardCheckoutUrl([
-            'name' => $order->username ?? "{$order->user?->firstname} {$order->user?->lastname}", 
-            'email' => $order->user?->email,
-            'phone' => $this->formatPhone($order->phone ?? $order->user?->phone),
+            'name'  => $order?->username
+                ?? ($authUser?->firstname . ' ' . $authUser?->lastname),
+            'email' => $order?->user?->email ?? $authUser?->email,
+            'phone' => $this->formatPhone($order?->phone ?? $authUser?->phone),
             'amount' => $totalPrice,
             'transaction_id' => $trxRef,
             'address' => 'Dar Es Salaam',
             'postcode' => '',
             'user_id' => auth('sanctum')->id(),
-            'country_code' => $order->user?->address?->country?->translation?->title,
-            'state' => $order->user?->address?->region?->translation?->title,
-            'city' => $order->user?->address?->city?->translation?->title,
-            'billing_phone' => $this->formatPhone($order->phone ?? $order->user?->phone),
+            'country_code' => $order?->user?->address?->country?->translation?->title,
+            'state'        => $order?->user?->address?->region?->translation?->title,
+            'city'         => $order?->user?->address?->city?->translation?->title,
+            'billing_phone' => $this->formatPhone($order?->phone ?? $authUser?->phone),
             'currency' => data_get($payload, 'currency'),
             'items' => 1,
         ]);
