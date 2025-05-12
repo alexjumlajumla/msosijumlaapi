@@ -660,7 +660,7 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
 			Route::get('orders/paginate',               [Seller\OrderController::class, 'paginate']);
 			Route::post('order/{id}/deliveryman',       [Seller\OrderController::class, 'orderDeliverymanUpdate']);
 			Route::post('orders/{id}/waiter',           [Seller\OrderController::class, 'orderWaiterUpdate']);
-			Route::post('order/{id}/status',            [Seller\OrderController::class, 'orderStatusUpdate']);
+			Route::match(['post','put','patch'],'order/{id}/status', [Seller\OrderController::class, 'orderStatusUpdate']);
 			Route::apiResource('orders',     Seller\OrderController::class)->except('index');
 			Route::delete('orders/delete',              [Seller\OrderController::class, 'destroy']);
             Route::get('orders/pending/transaction',    [Seller\OrderController::class, 'ordersPendingTransaction']);
@@ -992,7 +992,7 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
 			Route::get('order/products/calculate',       [Admin\OrderController::class, 'orderStocksCalculate']);
 			Route::post('order/{id}/deliveryman',        [Admin\OrderController::class, 'orderDeliverymanUpdate']);
 			Route::post('order/{id}/waiter',             [Admin\OrderController::class, 'orderWaiterUpdate']);
-			Route::post('order/{id}/status',             [Admin\OrderController::class, 'orderStatusUpdate']);
+			Route::match(['post','put','patch'],'order/{id}/status', [Admin\OrderController::class, 'orderStatusUpdate']);
 			Route::apiResource('orders',       Admin\OrderController::class);
 			Route::delete('orders/delete',               [Admin\OrderController::class, 'destroy']);
 			Route::get('orders/drop/all',                [Admin\OrderController::class, 'dropAll']);
@@ -1006,7 +1006,7 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
             Route::get('parcel-order/export',            [Admin\ParcelOrderController::class, 'fileExport']);
             Route::post('parcel-order/import',           [Admin\ParcelOrderController::class, 'fileImport']);
             Route::post('parcel-order/{id}/deliveryman', [Admin\ParcelOrderController::class, 'orderDeliverymanUpdate']);
-            Route::post('parcel-order/{id}/status',      [Admin\ParcelOrderController::class, 'orderStatusUpdate']);
+            Route::match(['post','put','patch'],'parcel-order/{id}/status', [Admin\ParcelOrderController::class, 'orderStatusUpdate']);
             Route::apiResource('parcel-orders',       Admin\ParcelOrderController::class);
             Route::delete('parcel-orders/delete',        [Admin\ParcelOrderController::class, 'destroy']);
             Route::get('parcel-orders/drop/all',         [Admin\ParcelOrderController::class, 'dropAll']);
