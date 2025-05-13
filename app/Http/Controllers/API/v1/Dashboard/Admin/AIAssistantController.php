@@ -14,14 +14,26 @@ class AIAssistantController extends Controller
     /**
      * Get AI Assistant usage statistics
      */
-    public function getStatistics()
+    public function getStatistics(Request $request)
     {
+        // Base query
+        $query = AIAssistantLog::query();
+        
+        // Filter by date range if provided
+        if ($request->has('date_from')) {
+            $query->whereDate('created_at', '>=', $request->input('date_from'));
+        }
+        
+        if ($request->has('date_to')) {
+            $query->whereDate('created_at', '<=', $request->input('date_to'));
+        }
+        
         $stats = [
-            'total_requests' => AIAssistantLog::count(),
-            'successful_requests' => AIAssistantLog::where('successful', true)->count(),
-            'failed_requests' => AIAssistantLog::where('successful', false)->count(),
-            'unique_users' => AIAssistantLog::distinct('user_id')->count('user_id'),
-            'avg_processing_time' => AIAssistantLog::avg('processing_time_ms') ?? 0,
+            'total_requests' => $query->count(),
+            'successful_requests' => (clone $query)->where('successful', true)->count(),
+            'failed_requests' => (clone $query)->where('successful', false)->count(),
+            'unique_users' => (clone $query)->distinct('user_id')->count('user_id'),
+            'avg_processing_time' => (clone $query)->avg('processing_time_ms') ?? 0,
             'total_premium_users' => User::where('is_premium', true)->count(),
         ];
         
@@ -63,9 +75,20 @@ class AIAssistantController extends Controller
     /**
      * Get top AI filters detected
      */
-    public function getTopFilters()
+    public function getTopFilters(Request $request)
     {
-        $logs = AIAssistantLog::where('filters_detected', '!=', null)->get();
+        $query = AIAssistantLog::where('filters_detected', '!=', null);
+        
+        // Filter by date range if provided
+        if ($request->has('date_from')) {
+            $query->whereDate('created_at', '>=', $request->input('date_from'));
+        }
+        
+        if ($request->has('date_to')) {
+            $query->whereDate('created_at', '<=', $request->input('date_to'));
+        }
+        
+        $logs = $query->get();
         
         $filters = [];
         foreach ($logs as $log) {
@@ -97,9 +120,20 @@ class AIAssistantController extends Controller
     /**
      * Get top exclude ingredients
      */
-    public function getTopExclusions()
+    public function getTopExclusions(Request $request)
     {
-        $logs = AIAssistantLog::where('filters_detected', '!=', null)->get();
+        $query = AIAssistantLog::where('filters_detected', '!=', null);
+        
+        // Filter by date range if provided
+        if ($request->has('date_from')) {
+            $query->whereDate('created_at', '>=', $request->input('date_from'));
+        }
+        
+        if ($request->has('date_to')) {
+            $query->whereDate('created_at', '<=', $request->input('date_to'));
+        }
+        
+        $logs = $query->get();
         
         $exclusions = [];
         foreach ($logs as $log) {
