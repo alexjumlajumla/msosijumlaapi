@@ -10,5 +10,9 @@ return [
         'cert_path' => env('VFD_CERT_PATH'),
     ],
 
+    'openai' => [
+        'api_key' => env('OPENAI_API_KEY'),
+    ],
+
     // ... existing code ...
 ]; 

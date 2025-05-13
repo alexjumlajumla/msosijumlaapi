@@ -6,6 +6,7 @@ use App\Http\Controllers\API\v1\Dashboard\Admin\AdminBaseController;
 use App\Models\Trip;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Services\TripService\RouteOptimizer;
 
 class TripController extends AdminBaseController
 {
@@ -42,5 +43,20 @@ class TripController extends AdminBaseController
         }
 
         return $this->successResponse('created', $trip->load('locations'));
+    }
+
+    public function optimize(Request $request, Trip $trip, RouteOptimizer $optimizer): JsonResponse
+    {
+        $order = $optimizer->optimise($trip);
+
+        // Update sequences if we got a valid order
+        foreach ($order as $seq => $locId) {
+            $trip->locations()->where('id', $locId)->update(['sequence' => $seq]);
+        }
+
+        // Save optimisation meta
+        $trip->update(['meta' => array_merge($trip->meta ?? [], ['optimized_at' => now()])]);
+
+        return $this->successResponse('optimized', $trip->load('locations'));
     }
 } 
