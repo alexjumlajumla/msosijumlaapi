@@ -36,8 +36,10 @@ class OrderObserver
         $trip = Trip::create([
             'name' => 'Trip for Order #' . $order->id,
             'start_address' => $order->address ?? 'Unknown',
-            'start_lat' => $order->location['lat'] ?? 0,
-            'start_lng' => $order->location['lng'] ?? 0,
+            'start_lat' => is_array($order->location) ? 
+                           ($order->location['lat'] ?? $order->location['latitude'] ?? 0) : 0,
+            'start_lng' => is_array($order->location) ? 
+                           ($order->location['lng'] ?? $order->location['longitude'] ?? 0) : 0,
             'scheduled_at' => now(),
             'status' => 'planned',
         ]);
