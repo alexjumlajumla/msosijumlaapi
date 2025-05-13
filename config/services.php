@@ -11,8 +11,11 @@ return [
     ],
 
     'google' => [
-        'project_id' => env('GOOGLE_CLOUD_PROJECT', 'msosijumla'),
-        'credentials' => env('GOOGLE_APPLICATION_CREDENTIALS'),
+        'project_id' => env('GOOGLE_CLOUD_PROJECT_ID', 'msosijumla'),
+        'credentials' => function_exists('json_decode') && is_string(env('GOOGLE_APPLICATION_CREDENTIALS')) && file_exists(env('GOOGLE_APPLICATION_CREDENTIALS'))
+            ? json_decode(file_get_contents(env('GOOGLE_APPLICATION_CREDENTIALS')), true)
+            : null,
+        'credentials_file' => env('GOOGLE_APPLICATION_CREDENTIALS'),
     ],
 
     'openai' => [

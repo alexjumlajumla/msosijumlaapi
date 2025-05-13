@@ -1556,6 +1556,35 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
     });
 
     Route::post('/voice-order', [VoiceOrderController::class, 'processVoiceOrder']);
+
+    // Test route for Google Cloud credentials
+    Route::get('/test-google-credentials', function() {
+        try {
+            // Check if credentials file exists
+            $credentialsPath = env('GOOGLE_APPLICATION_CREDENTIALS');
+            $fileExists = file_exists($credentialsPath);
+            
+            // Try to initialize a Speech client to verify credentials are valid
+            $speechClient = new \Google\Cloud\Speech\V1\SpeechClient([
+                'credentials' => config('services.google.credentials'),
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Google Cloud credentials are valid',
+                'credentials_file_exists' => $fileExists,
+                'credentials_path' => $credentialsPath,
+                'project_id' => config('services.google.project_id')
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error testing Google Cloud credentials',
+                'error' => $e->getMessage(),
+                'credentials_path' => env('GOOGLE_APPLICATION_CREDENTIALS')
+            ], 500);
+        }
+    });
 });
 
 if (file_exists(__DIR__ . '/booking.php')) {
@@ -1566,13 +1595,42 @@ if (file_exists(__DIR__ . '/booking.php')) {
 
 Route::get('/test-google-credentials', function() {
     try {
-        // Verify the credentials file exists
+        // Get credentials path from env
         $credentialsPath = env('GOOGLE_APPLICATION_CREDENTIALS');
-        $fileExists = file_exists($credentialsPath);
+        $projectId = env('GOOGLE_CLOUD_PROJECT_ID');
+        
+        // Check if credentials file exists
+        $fileExists = !empty($credentialsPath) && file_exists($credentialsPath);
+        
+        // Get credentials content if file exists
+        $credentials = null;
+        if ($fileExists) {
+            $credentials = json_decode(file_get_contents($credentialsPath), true);
+        }
+        
+        // Return early if credentials file doesn't exist or is invalid
+        if (!$fileExists || empty($credentials)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Google Cloud credentials file not found or invalid',
+                'credentials_file_exists' => $fileExists,
+                'credentials_path' => $credentialsPath,
+                'project_id' => $projectId,
+                'credentials_valid' => !empty($credentials),
+                'steps_to_fix' => [
+                    '1. Create a Google Cloud project at https://console.cloud.google.com/',
+                    '2. Enable the Speech-to-Text API',
+                    '3. Create a service account and download the JSON credentials file',
+                    '4. Place the JSON file in a secure location on your server',
+                    '5. Update the GOOGLE_APPLICATION_CREDENTIALS path in .env.local to point to this file',
+                    '6. Update the GOOGLE_CLOUD_PROJECT_ID in .env.local with your project ID'
+                ]
+            ]);
+        }
         
         // Try to initialize the Google Speech client
-        $speechClient = new Google\Cloud\Speech\V1\SpeechClient([
-            'credentials' => config('services.google.credentials'),
+        $speechClient = new \Google\Cloud\Speech\V1\SpeechClient([
+            'credentials' => $credentials,
         ]);
         
         // Close the client to prevent resource leaks
@@ -1582,16 +1640,24 @@ Route::get('/test-google-credentials', function() {
             'success' => true,
             'credentials_file_exists' => $fileExists,
             'credentials_path' => $credentialsPath,
+            'project_id' => $projectId,
             'client_initialized' => true,
             'message' => 'Google Cloud Speech client initialized successfully'
         ]);
     } catch (\Exception $e) {
         return response()->json([
             'success' => false,
+            'message' => 'Failed to initialize Google Cloud Speech client',
             'credentials_path' => env('GOOGLE_APPLICATION_CREDENTIALS'),
+            'project_id' => env('GOOGLE_CLOUD_PROJECT_ID'),
             'error' => $e->getMessage(),
-            'trace' => $e->getTraceAsString()
-        ], 500);
+            'steps_to_fix' => [
+                '1. Ensure your Google Cloud credentials are valid',
+                '2. Make sure the Speech-to-Text API is enabled in your project',
+                '3. Check that the service account has the proper permissions',
+                '4. Verify the file path in GOOGLE_APPLICATION_CREDENTIALS is correct'
+            ]
+        ]);
     }
 });
 
