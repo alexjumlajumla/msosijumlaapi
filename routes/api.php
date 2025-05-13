@@ -1736,45 +1736,41 @@ Route::get('/test-google-credentials', function() {
 
 Route::get('/test-openai', function() {
     try {
-        // Get the OpenAI API key from config
         $apiKey = config('services.openai.api_key');
-        $hasApiKey = !empty($apiKey);
-        
-        // Initialize OpenAI client
         $openAi = new Orhanerday\OpenAi\OpenAi($apiKey);
         
-        // Make a simple completion request to test the connection
         $response = $openAi->chat([
             'model' => 'gpt-3.5-turbo',
             'messages' => [
                 [
                     'role' => 'system',
-                    'content' => 'You are a test system. Respond with "OpenAI connection successful."',
+                    'content' => 'You are a helpful assistant.',
                 ],
                 [
                     'role' => 'user',
-                    'content' => 'Test connection',
+                    'content' => 'Test connection with a short response',
                 ],
             ],
-            'max_tokens' => 10
+            'temperature' => 0.7,
+            'max_tokens' => 10,
         ]);
         
         $decoded = json_decode($response, true);
-        $content = data_get($decoded, 'choices.0.message.content', '');
+        $content = data_get($decoded, 'choices.0.message.content', 'No response');
         
         return response()->json([
             'success' => true,
-            'has_api_key' => $hasApiKey,
-            'api_key_preview' => $hasApiKey ? substr($apiKey, 0, 5) . '...' . substr($apiKey, -5) : null,
+            'api_key_set' => !empty($apiKey),
             'response' => $content,
-            'message' => 'OpenAI API connection successful'
+            'message' => 'OpenAI connection successful'
         ]);
     } catch (\Exception $e) {
         return response()->json([
             'success' => false,
-            'has_api_key' => !empty(config('services.openai.api_key')),
+            'message' => 'OpenAI connection failed: ' . $e->getMessage(),
+            'api_key_set' => !empty(config('services.openai.api_key')),
             'error' => $e->getMessage(),
-            'trace' => $e->getTraceAsString()
-        ], 500);
+            'trace' => explode("\n", $e->getTraceAsString())
+        ]);
     }
 });

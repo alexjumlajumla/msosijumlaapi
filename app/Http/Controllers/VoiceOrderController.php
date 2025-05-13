@@ -111,13 +111,23 @@ class VoiceOrderController extends Controller
                 'session_id' => $sessionId
             ]);
         } catch (\Exception $e) {
-            Log::error('Error processing voice order: ' . $e->getMessage());
+            Log::error('Error processing voice order: ' . $e->getMessage() . ' | ' . $e->getTraceAsString());
             $logData['output'] = $e->getMessage();
             $logData['response_content'] = $e->getMessage();
+            
+            // More detailed error for debugging
+            $errorDetails = [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => explode("\n", $e->getTraceAsString())
+            ];
+            
             return response()->json([
                 'success' => false, 
-                'message' => 'Failed to process voice order.',
-                'error' => $e->getMessage()
+                'message' => 'Failed to process voice order. Error: ' . $e->getMessage(),
+                'error' => $e->getMessage(),
+                'error_details' => $errorDetails
             ], 500);
         } finally {
             // Calculate processing time
