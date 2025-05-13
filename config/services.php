@@ -11,6 +11,7 @@ return [
     ],
 
     'google' => [
+        'project_id' => env('GOOGLE_CLOUD_PROJECT', 'msosijumla'),
         'credentials' => env('GOOGLE_APPLICATION_CREDENTIALS'),
     ],
 

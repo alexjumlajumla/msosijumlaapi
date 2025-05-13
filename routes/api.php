@@ -1561,3 +1561,83 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
 if (file_exists(__DIR__ . '/booking.php')) {
     include_once  __DIR__ . '/booking.php';
 }
+
+// Add this route at the end of the file, just before the closing bracket
+
+Route::get('/test-google-credentials', function() {
+    try {
+        // Verify the credentials file exists
+        $credentialsPath = env('GOOGLE_APPLICATION_CREDENTIALS');
+        $fileExists = file_exists($credentialsPath);
+        
+        // Try to initialize the Google Speech client
+        $speechClient = new Google\Cloud\Speech\V1\SpeechClient([
+            'credentials' => config('services.google.credentials'),
+        ]);
+        
+        // Close the client to prevent resource leaks
+        $speechClient->close();
+        
+        return response()->json([
+            'success' => true,
+            'credentials_file_exists' => $fileExists,
+            'credentials_path' => $credentialsPath,
+            'client_initialized' => true,
+            'message' => 'Google Cloud Speech client initialized successfully'
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'credentials_path' => env('GOOGLE_APPLICATION_CREDENTIALS'),
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ], 500);
+    }
+});
+
+// Add this route just after the Google credentials test route
+
+Route::get('/test-openai', function() {
+    try {
+        // Get the OpenAI API key from config
+        $apiKey = config('services.openai.api_key');
+        $hasApiKey = !empty($apiKey);
+        
+        // Initialize OpenAI client
+        $openAi = new Orhanerday\OpenAi\OpenAi($apiKey);
+        
+        // Make a simple completion request to test the connection
+        $response = $openAi->chat([
+            'model' => 'gpt-3.5-turbo',
+            'messages' => [
+                [
+                    'role' => 'system',
+                    'content' => 'You are a test system. Respond with "OpenAI connection successful."',
+                ],
+                [
+                    'role' => 'user',
+                    'content' => 'Test connection',
+                ],
+            ],
+            'max_tokens' => 10
+        ]);
+        
+        $decoded = json_decode($response, true);
+        $content = data_get($decoded, 'choices.0.message.content', '');
+        
+        return response()->json([
+            'success' => true,
+            'has_api_key' => $hasApiKey,
+            'api_key_preview' => $hasApiKey ? substr($apiKey, 0, 5) . '...' . substr($apiKey, -5) : null,
+            'response' => $content,
+            'message' => 'OpenAI API connection successful'
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'has_api_key' => !empty(config('services.openai.api_key')),
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ], 500);
+    }
+});
