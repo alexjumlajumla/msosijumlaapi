@@ -32,6 +32,14 @@ class BroadcastService extends CoreService
         $channels = $payload['channels'];    // ['push','email']
         $customEmails = $payload['custom_emails'] ?? [];
 
+        // decode body if it looks base64
+        if (preg_match('/^[A-Za-z0-9+\/=]+$/', $payload['body'] ?? '')) {
+            $decoded = base64_decode($payload['body'], true);
+            if ($decoded !== false) {
+                $payload['body'] = $decoded;
+            }
+        }
+
         // Ensure referenced roles exist (idempotent)
         foreach ($groups as $roleName) {
             Role::findOrCreate($roleName);
