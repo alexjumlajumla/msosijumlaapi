@@ -16,7 +16,7 @@ class CreateOrdersTable extends Migration
     {
         Schema::create('orders', function (Blueprint $table) {
             $table->id()->from(1000);
-            $table->foreignId('user_id');
+            $table->foreignId('user_id')->nullable();
             $table->double('total_price', 20)->comment('Сумма с учётом всех налогов и скидок');
 
             $table->foreignId('currency_id')
