@@ -32,20 +32,47 @@ class OrderObserver
             AttachDeliveryMan::dispatchAfterResponse($order, $this->language());
         }
 
-        // Create a new Trip for the order
-        $trip = Trip::create([
-            'name' => 'Trip for Order #' . $order->id,
-            'start_address' => $order->address ?? 'Unknown',
-            'start_lat' => is_array($order->location) ? 
-                           ($order->location['lat'] ?? $order->location['latitude'] ?? 0) : 0,
-            'start_lng' => is_array($order->location) ? 
-                           ($order->location['lng'] ?? $order->location['longitude'] ?? 0) : 0,
-            'scheduled_at' => now(),
-            'status' => 'planned',
-        ]);
+        try {
+            // Format address as a string if it's an array
+            $addressString = 'Unknown';
+            if (isset($order->address)) {
+                if (is_array($order->address)) {
+                    // Try to extract meaningful address information
+                    $addressString = implode(', ', array_filter([
+                        $order->address['address'] ?? '',
+                        $order->address['house'] ?? '',
+                        $order->address['street'] ?? '',
+                        $order->address['city'] ?? '',
+                    ]));
+                    
+                    // If still empty after trying to combine array elements
+                    if (empty(trim($addressString))) {
+                        $addressString = 'Address from Order #' . $order->id;
+                    }
+                } else {
+                    // If it's already a string
+                    $addressString = (string)$order->address;
+                }
+            }
 
-        // Associate the order with the trip
-        $order->trip()->attach($trip->id, ['sequence' => 1, 'status' => 'pending']);
+            // Create a new Trip for the order
+            $trip = Trip::create([
+                'name' => 'Trip for Order #' . $order->id,
+                'start_address' => $addressString,
+                'start_lat' => is_array($order->location) ? 
+                               ($order->location['lat'] ?? $order->location['latitude'] ?? 0) : 0,
+                'start_lng' => is_array($order->location) ? 
+                               ($order->location['lng'] ?? $order->location['longitude'] ?? 0) : 0,
+                'scheduled_at' => now(),
+                'status' => 'planned',
+            ]);
+
+            // Associate the order with the trip
+            $order->trip()->attach($trip->id, ['sequence' => 1, 'status' => 'pending']);
+        } catch (Throwable $e) {
+            // Log the error but don't stop order creation
+            Log::error('Error creating trip for order #' . $order->id . ': ' . $e->getMessage());
+        }
 
         // (new OrderNotificationService)->sendOrderNotification($order, 'created');
 
