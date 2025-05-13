@@ -49,6 +49,8 @@ class CreateOrdersTable extends Migration
             $table->string('delivery_type')->default(Order::PICKUP);
             $table->boolean('current')->default(false);
 
+            $table->foreignId('trip_id')->nullable()->constrained('trips')->nullOnDelete();
+
             $table->timestamps();
             $table->softDeletes();
         });
