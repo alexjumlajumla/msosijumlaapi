@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('trips', function (Blueprint $table) {
             $table->id();
             $table->string('name')->nullable();
-            $table->foreignId('vehicle_id')->nullable()->constrained('delivery_vehicles')->nullOnDelete();
+            $table->foreignId('vehicle_id')->nullable()->constrained('deliveryman_settings', 'user_id')->nullOnDelete();
             $table->foreignId('driver_id')->nullable()->constrained('users')->nullOnDelete();
             $table->string('start_address');
             $table->decimal('start_lat',10,7);
