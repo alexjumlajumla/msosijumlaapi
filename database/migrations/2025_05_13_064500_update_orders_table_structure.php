@@ -21,7 +21,7 @@ return new class extends Migration
             $table->unsignedBigInteger('user_booking_id')->nullable()->change();
             $table->unsignedBigInteger('cart_id')->nullable()->change();
 
-            // Add any missing columns
+            // Only add columns if they don't exist
             if (!Schema::hasColumn('orders', 'img')) {
                 $table->string('img')->nullable();
             }
@@ -40,8 +40,12 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('orders', function (Blueprint $table) {
-            // Reverse changes if necessary
-            $table->dropColumn(['img', 'email', 'image_after_delivered', 'otp']);
+            $table->dropColumn([
+                'img',
+                'email',
+                'image_after_delivered',
+                'otp'
+            ]);
         });
     }
 }; 
