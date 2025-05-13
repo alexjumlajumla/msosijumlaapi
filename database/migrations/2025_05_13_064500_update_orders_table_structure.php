@@ -1,8 +1,10 @@
+<?php
+
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-class UpdateOrdersTableStructure extends Migration
+return new class extends Migration
 {
     public function up(): void
     {
@@ -20,10 +22,18 @@ class UpdateOrdersTableStructure extends Migration
             $table->unsignedBigInteger('cart_id')->nullable()->change();
 
             // Add any missing columns
-            $table->string('img')->nullable();
-            $table->string('email')->nullable();
-            $table->string('image_after_delivered')->nullable();
-            $table->smallInteger('otp')->nullable();
+            if (!Schema::hasColumn('orders', 'img')) {
+                $table->string('img')->nullable();
+            }
+            if (!Schema::hasColumn('orders', 'email')) {
+                $table->string('email')->nullable();
+            }
+            if (!Schema::hasColumn('orders', 'image_after_delivered')) {
+                $table->string('image_after_delivered')->nullable();
+            }
+            if (!Schema::hasColumn('orders', 'otp')) {
+                $table->smallInteger('otp')->nullable();
+            }
         });
     }
 
@@ -34,4 +44,4 @@ class UpdateOrdersTableStructure extends Migration
             $table->dropColumn(['img', 'email', 'image_after_delivered', 'otp']);
         });
     }
-} 
+}; 
