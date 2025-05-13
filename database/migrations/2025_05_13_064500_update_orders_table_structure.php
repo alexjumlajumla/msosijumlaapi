@@ -8,44 +8,12 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::table('orders', function (Blueprint $table) {
-            // Ensure existing columns match the provided structure
-            $table->foreignId('user_id')->nullable()->change();
-            $table->foreignId('shop_id')->nullable()->change();
-            $table->foreignId('currency_id')->nullable()->change();
-            $table->foreignId('deliveryman')->nullable()->change();
-            $table->foreignId('address_id')->nullable()->change();
-            $table->foreignId('waiter_id')->nullable()->change();
-            $table->unsignedBigInteger('table_id')->nullable()->change();
-            $table->unsignedBigInteger('booking_id')->nullable()->change();
-            $table->unsignedBigInteger('user_booking_id')->nullable()->change();
-            $table->unsignedBigInteger('cart_id')->nullable()->change();
-
-            // Only add columns if they don't exist
-            if (!Schema::hasColumn('orders', 'img')) {
-                $table->string('img')->nullable();
-            }
-            if (!Schema::hasColumn('orders', 'email')) {
-                $table->string('email')->nullable();
-            }
-            if (!Schema::hasColumn('orders', 'image_after_delivered')) {
-                $table->string('image_after_delivered')->nullable();
-            }
-            if (!Schema::hasColumn('orders', 'otp')) {
-                $table->smallInteger('otp')->nullable();
-            }
-        });
+        // This migration was originally intended to modify the orders table, but it has been neutralized
+        // to prevent conflicts and dependency issues. No action is taken here.
     }
 
     public function down(): void
     {
-        Schema::table('orders', function (Blueprint $table) {
-            $table->dropColumn([
-                'img',
-                'email',
-                'image_after_delivered',
-                'otp'
-            ]);
-        });
+        // Nothing to rollback because up() is empty.
     }
 }; 
