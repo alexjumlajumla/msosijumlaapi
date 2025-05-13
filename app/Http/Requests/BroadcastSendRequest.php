@@ -8,8 +8,8 @@ class BroadcastSendRequest extends FormRequest
 {
     public function authorize(): bool
     {
-        // Only admins are allowed via sanctum; policy can be added later
-        return auth('sanctum')->check() && auth('sanctum')->user()->hasRole('admin');
+        $allowed = ['admin','director','manager','customer_care','product_manager','marketing'];
+        return auth('sanctum')->check() && auth('sanctum')->user()->hasAnyRole($allowed);
     }
 
     public function rules(): array
@@ -20,7 +20,7 @@ class BroadcastSendRequest extends FormRequest
             'channels' => 'required|array|min:1',
             'channels.*' => 'in:push,email',
             'groups'   => 'required|array|min:1',
-            'groups.*' => 'in:admin,seller,deliveryman,user,customer_care,product_manager,director,manager',
+            'groups.*' => 'in:admin,seller,deliveryman,user,customer_care,product_manager,director,manager,marketing',
         ];
     }
 } 
