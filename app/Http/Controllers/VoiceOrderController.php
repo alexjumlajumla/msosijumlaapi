@@ -120,7 +120,7 @@ class VoiceOrderController extends Controller
             $logData['successful'] = $success;
             
             // Log interaction
-            AIAssistantLog::logInteraction($logData);
+            AIAssistantLog::create($logData);
         }
     }
     
