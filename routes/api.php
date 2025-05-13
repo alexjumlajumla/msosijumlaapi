@@ -1473,7 +1473,7 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
             });
 
             /* Trips */
-            Route::apiResource('trips', Admin\TripController::class)->only('index','store');
+            Route::apiResource('trips', Admin\TripController::class)->only('index','store','show');
             Route::post('trips/{trip}/optimize', [Admin\TripController::class, 'optimize']);
 
 		});

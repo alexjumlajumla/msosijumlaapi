@@ -6,6 +6,7 @@ use App\Models\Trip;
 use App\Models\TripLocation;
 use Orhanerday\OpenAi\OpenAi;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 
 class RouteOptimizer
 {
@@ -24,21 +25,27 @@ class RouteOptimizer
     {
         $locations = $trip->locations()->get();
 
-        // If OpenAI API key configured, try AI optimisation first
-        if ($this->apiKey) {
-            try {
-                $ordered = $this->optimiseWithOpenAi($trip, $locations);
-                if ($ordered) {
-                    return $ordered;
-                }
-            } catch (\Throwable $e) {
-                // Log but silently fall back
-                logger()->warning('OpenAI route optimisation failed: '.$e->getMessage());
-            }
-        }
+        // Build cache key based on trip id & location hash (lat,lng,updated_at)
+        $hash = md5($locations->map(fn ($l) => $l->lat . ',' . $l->lng . '|' . $l->updated_at)->implode(';'));
+        $cacheKey = 'optimized_trip_' . $trip->id . '_' . $hash;
 
-        // Fallback to simple nearest-neighbour heuristic
-        return $this->optimiseNearestNeighbour($trip, $locations);
+        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($trip, $locations) {
+            // Try AI optimisation first
+            if ($this->apiKey) {
+                try {
+                    $ordered = $this->optimiseWithOpenAi($trip, $locations);
+                    if ($ordered) {
+                        return $ordered;
+                    }
+                } catch (\Throwable $e) {
+                    // Log but silently fall back
+                    logger()->warning('OpenAI route optimisation failed: ' . $e->getMessage());
+                }
+            }
+
+            // Fallback heuristic
+            return $this->optimiseNearestNeighbour($trip, $locations);
+        });
     }
 
     /**

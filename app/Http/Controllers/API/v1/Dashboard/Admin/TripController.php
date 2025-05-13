@@ -59,4 +59,9 @@ class TripController extends AdminBaseController
 
         return $this->successResponse('optimized', $trip->load('locations'));
     }
+
+    public function show(Trip $trip): JsonResponse
+    {
+        return $this->successResponse('success', $trip->load(['locations','driver','vehicle']));
+    }
 } 
