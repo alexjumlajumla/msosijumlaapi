@@ -1,0 +1,4 @@
+# Google Cloud settings
+GOOGLE_APPLICATION_CREDENTIALS=/var/www/vhosts/jumlajumla.com/mapi.jumlajumla.com/storage/app/google-service-account.json
+# Update with your Google Cloud project ID from the credentials file
+GOOGLE_CLOUD_PROJECT_ID=your-project-id

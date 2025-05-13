@@ -1599,31 +1599,96 @@ Route::get('/test-google-credentials', function() {
         $credentialsPath = env('GOOGLE_APPLICATION_CREDENTIALS');
         $projectId = env('GOOGLE_CLOUD_PROJECT_ID');
         
-        // Check if credentials file exists
-        $fileExists = !empty($credentialsPath) && file_exists($credentialsPath);
-        
-        // Get credentials content if file exists
-        $credentials = null;
-        if ($fileExists) {
-            $credentials = json_decode(file_get_contents($credentialsPath), true);
-        }
-        
-        // Return early if credentials file doesn't exist or is invalid
-        if (!$fileExists || empty($credentials)) {
+        // Check if credentials path is set
+        if (empty($credentialsPath)) {
             return response()->json([
                 'success' => false,
-                'message' => 'Google Cloud credentials file not found or invalid',
-                'credentials_file_exists' => $fileExists,
-                'credentials_path' => $credentialsPath,
-                'project_id' => $projectId,
-                'credentials_valid' => !empty($credentials),
-                'steps_to_fix' => [
-                    '1. Create a Google Cloud project at https://console.cloud.google.com/',
-                    '2. Enable the Speech-to-Text API',
-                    '3. Create a service account and download the JSON credentials file',
-                    '4. Place the JSON file in a secure location on your server',
-                    '5. Update the GOOGLE_APPLICATION_CREDENTIALS path in .env.local to point to this file',
-                    '6. Update the GOOGLE_CLOUD_PROJECT_ID in .env.local with your project ID'
+                'message' => 'Google Cloud credentials path not set',
+                'debug_info' => [
+                    'credentials_path' => $credentialsPath,
+                    'project_id' => $projectId,
+                ]
+            ]);
+        }
+        
+        // Check if file exists
+        $fileExists = file_exists($credentialsPath);
+        if (!$fileExists) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Google Cloud credentials file not found',
+                'debug_info' => [
+                    'credentials_path' => $credentialsPath,
+                    'file_exists' => $fileExists,
+                    'is_readable' => is_readable($credentialsPath),
+                    'file_permissions' => file_exists($credentialsPath) ? substr(sprintf('%o', fileperms($credentialsPath)), -4) : 'N/A',
+                    'directory_exists' => is_dir(dirname($credentialsPath)),
+                    'directory_permissions' => is_dir(dirname($credentialsPath)) ? substr(sprintf('%o', fileperms(dirname($credentialsPath))), -4) : 'N/A'
+                ]
+            ]);
+        }
+        
+        // Check if file is readable
+        if (!is_readable($credentialsPath)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Google Cloud credentials file is not readable',
+                'debug_info' => [
+                    'credentials_path' => $credentialsPath,
+                    'file_exists' => $fileExists,
+                    'is_readable' => is_readable($credentialsPath),
+                    'file_permissions' => substr(sprintf('%o', fileperms($credentialsPath)), -4),
+                    'file_owner' => posix_getpwuid(fileowner($credentialsPath))['name'] ?? 'unknown',
+                    'process_user' => posix_getpwuid(posix_geteuid())['name'] ?? 'unknown'
+                ]
+            ]);
+        }
+        
+        // Get file contents
+        $fileContents = file_get_contents($credentialsPath);
+        if ($fileContents === false) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to read Google Cloud credentials file',
+                'debug_info' => [
+                    'credentials_path' => $credentialsPath,
+                    'file_exists' => $fileExists,
+                    'is_readable' => is_readable($credentialsPath),
+                    'file_size' => filesize($credentialsPath)
+                ]
+            ]);
+        }
+        
+        // Parse JSON
+        $credentials = json_decode($fileContents, true);
+        if ($credentials === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid JSON in Google Cloud credentials file',
+                'debug_info' => [
+                    'credentials_path' => $credentialsPath,
+                    'json_error' => json_last_error_msg(),
+                    'file_exists' => $fileExists,
+                    'file_size' => filesize($credentialsPath),
+                    'file_preview' => substr($fileContents, 0, 100) . '...'
+                ]
+            ]);
+        }
+        
+        // Check essential fields
+        $requiredFields = ['type', 'project_id', 'private_key_id', 'private_key', 'client_email'];
+        $missingFields = array_filter($requiredFields, function($field) use ($credentials) {
+            return !isset($credentials[$field]) || empty($credentials[$field]);
+        });
+        
+        if (!empty($missingFields)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Missing required fields in Google Cloud credentials file',
+                'debug_info' => [
+                    'credentials_path' => $credentialsPath,
+                    'missing_fields' => $missingFields,
+                    'available_fields' => array_keys($credentials)
                 ]
             ]);
         }
@@ -1638,19 +1703,25 @@ Route::get('/test-google-credentials', function() {
         
         return response()->json([
             'success' => true,
-            'credentials_file_exists' => $fileExists,
-            'credentials_path' => $credentialsPath,
-            'project_id' => $projectId,
-            'client_initialized' => true,
-            'message' => 'Google Cloud Speech client initialized successfully'
+            'message' => 'Google Cloud Speech client initialized successfully',
+            'debug_info' => [
+                'credentials_path' => $credentialsPath,
+                'project_id' => $projectId,
+                'credentials_project_id' => $credentials['project_id'],
+                'client_email' => $credentials['client_email']
+            ]
         ]);
     } catch (\Exception $e) {
         return response()->json([
             'success' => false,
-            'message' => 'Failed to initialize Google Cloud Speech client',
-            'credentials_path' => env('GOOGLE_APPLICATION_CREDENTIALS'),
-            'project_id' => env('GOOGLE_CLOUD_PROJECT_ID'),
-            'error' => $e->getMessage(),
+            'message' => 'Failed to initialize Google Cloud Speech client: ' . $e->getMessage(),
+            'debug_info' => [
+                'error' => $e->getMessage(),
+                'error_class' => get_class($e),
+                'error_trace' => explode("\n", $e->getTraceAsString()),
+                'credentials_path' => env('GOOGLE_APPLICATION_CREDENTIALS'),
+                'project_id' => env('GOOGLE_CLOUD_PROJECT_ID')
+            ],
             'steps_to_fix' => [
                 '1. Ensure your Google Cloud credentials are valid',
                 '2. Make sure the Speech-to-Text API is enabled in your project',
