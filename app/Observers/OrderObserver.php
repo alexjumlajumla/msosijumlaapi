@@ -14,6 +14,7 @@ use Illuminate\Support\Facades\Log;
 use Psr\SimpleCache\InvalidArgumentException;
 use App\Services\OrderNotificationService;
 use Throwable;
+use App\Models\Trip;
 
 class OrderObserver
 {
@@ -30,6 +31,19 @@ class OrderObserver
         if ($order->status === Order::STATUS_READY && empty($order->deliveryman) && $this->autoDeliveryMan()) {
             AttachDeliveryMan::dispatchAfterResponse($order, $this->language());
         }
+
+        // Create a new Trip for the order
+        $trip = Trip::create([
+            'name' => 'Trip for Order #' . $order->id,
+            'start_address' => $order->address ?? 'Unknown',
+            'start_lat' => $order->location['lat'] ?? 0,
+            'start_lng' => $order->location['lng'] ?? 0,
+            'scheduled_at' => now(),
+            'status' => 'planned',
+        ]);
+
+        // Associate the order with the trip
+        $order->trip()->attach($trip->id, ['sequence' => 1, 'status' => 'pending']);
 
         // (new OrderNotificationService)->sendOrderNotification($order, 'created');
 

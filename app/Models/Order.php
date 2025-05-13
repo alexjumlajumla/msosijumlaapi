@@ -512,6 +512,13 @@ class Order extends Model
 		return $this->morphMany(ModelLog::class, 'model');
 	}
 
+	public function trip()
+	{
+		return $this->belongsToMany(Trip::class, 'order_trips')
+			->withPivot(['sequence', 'status'])
+			->withTimestamps();
+	}
+
 	/**
 	 * @param $query
 	 * @param $filter
