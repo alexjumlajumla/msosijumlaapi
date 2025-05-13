@@ -10,6 +10,10 @@ return [
         'cert_path' => env('VFD_CERT_PATH'),
     ],
 
+    'google' => [
+        'credentials' => env('GOOGLE_APPLICATION_CREDENTIALS'),
+    ],
+
     'openai' => [
         'api_key' => env('OPENAI_API_KEY'),
     ],

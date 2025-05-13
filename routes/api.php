@@ -6,6 +6,7 @@ use App\Http\Controllers\API\v1\Dashboard\{Admin, Cook, Deliveryman, Payment, Se
 use App\Http\Controllers\Web\TelegramBotController;
 use App\Models\Page;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\VoiceOrderController;
 
 /*
 |--------------------------------------------------------------------------
@@ -1476,7 +1477,22 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
             Route::apiResource('trips', Admin\TripController::class)->only('index','store','show');
             Route::post('trips/{trip}/optimize', [Admin\TripController::class, 'optimize']);
 
-		});
+            // Inside the admin routes group:
+            Route::group(['prefix' => 'dashboard/admin', 'middleware' => ['sanctum.check', 'role:admin|manager']], function () {
+                // ... existing admin routes ...
+                
+                // AI Assistant routes
+                Route::group(['prefix' => 'ai-assistant'], function () {
+                    Route::get('/statistics', [Admin\AIAssistantController::class, 'getStatistics']);
+                    Route::get('/logs', [Admin\AIAssistantController::class, 'getLogs']);
+                    Route::get('/top-filters', [Admin\AIAssistantController::class, 'getTopFilters']);
+                    Route::get('/top-exclusions', [Admin\AIAssistantController::class, 'getTopExclusions']);
+                    Route::post('/products/{id}/metadata', [Admin\AIAssistantController::class, 'updateProductMetadata']);
+                    Route::post('/users/{id}/credits', [Admin\AIAssistantController::class, 'updateUserCredits']);
+                    Route::post('/products/{id}/generate-image', [Admin\AIAssistantController::class, 'generateProductImage']);
+                });
+            });
+        });
 
 
     });
@@ -1538,6 +1554,8 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
             Route::get('payment-methods', [Admin\LoanAnalyticsController::class, 'getPaymentMethodDistribution']);
         });
     });
+
+    Route::post('/voice-order', [VoiceOrderController::class, 'processVoiceOrder']);
 });
 
 if (file_exists(__DIR__ . '/booking.php')) {
