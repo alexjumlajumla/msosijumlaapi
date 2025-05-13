@@ -1472,6 +1472,9 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
                 Route::get('payment-methods', [Admin\LoanAnalyticsController::class, 'getPaymentMethodDistribution']);
             });
 
+            /* Trips */
+            Route::apiResource('trips', Admin\TripController::class)->only('index','store');
+
 		});
 
 
