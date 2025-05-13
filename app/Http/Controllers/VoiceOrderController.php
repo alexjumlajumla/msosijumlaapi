@@ -39,7 +39,8 @@ class VoiceOrderController extends Controller
             'user_id' => $userId,
             'request_type' => 'voice_order',
             'successful' => false,
-            'session_id' => $sessionId
+            'session_id' => $sessionId,
+            'metadata' => [] // Initialize metadata
         ];
 
         try {
@@ -73,7 +74,9 @@ class VoiceOrderController extends Controller
 
             // Update log data with input
             $logData['input'] = $transcription;
+            $logData['request_content'] = $transcription;
             $logData['filters_detected'] = $orderData;
+            $logData['metadata']['order_data'] = $orderData;
 
             // Get product recommendations based on order data
             $recommendations = $this->foodIntelligenceService->filterProducts($orderData);
@@ -83,6 +86,8 @@ class VoiceOrderController extends Controller
             
             // Update log data with recommendations
             $logData['product_ids'] = $recommendations->pluck('id')->toArray();
+            $logData['metadata']['products'] = $recommendations->pluck('id')->toArray();
+            $logData['metadata']['recommendation_text'] = $recommendationText;
             
             // Save context for follow-up questions
             $this->saveConversationContext($sessionId, [
@@ -108,6 +113,7 @@ class VoiceOrderController extends Controller
         } catch (\Exception $e) {
             Log::error('Error processing voice order: ' . $e->getMessage());
             $logData['output'] = $e->getMessage();
+            $logData['response_content'] = $e->getMessage();
             return response()->json([
                 'success' => false, 
                 'message' => 'Failed to process voice order.',
