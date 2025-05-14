@@ -40,6 +40,10 @@ class RouteServiceProvider extends ServiceProvider
 
             Route::middleware('web')
                 ->group(base_path('routes/web.php'));
+                
+            // Include the voice test route
+            Route::middleware('api')
+                ->group(base_path('routes/voice_test.php'));
         });
     }
 
