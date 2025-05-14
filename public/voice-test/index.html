@@ -263,10 +263,25 @@
                 formData.append('audio', audioBlob);
                 formData.append('language', languageSelect.value);
                 
+                console.log('Sending request to voice-test endpoint...');
+                // Try with the explicit path
                 const response = await fetch('/voice-test', {
                     method: 'POST',
-                    body: formData
+                    body: formData,
+                    headers: {
+                        'Accept': 'application/json'
+                    }
                 });
+                
+                console.log('Response status:', response.status);
+                
+                // Check if response is HTML instead of JSON
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('text/html')) {
+                    const htmlContent = await response.text();
+                    console.error('Received HTML instead of JSON:', htmlContent);
+                    throw new Error('Server returned HTML instead of JSON. Check server logs for errors.');
+                }
                 
                 const data = await response.json();
                 
