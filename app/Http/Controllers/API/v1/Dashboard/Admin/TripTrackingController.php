@@ -23,7 +23,23 @@ class TripTrackingController extends AdminBaseController
             'speed' => 'nullable|numeric',
             'bearing' => 'nullable|numeric',
             'accuracy' => 'nullable|numeric',
+            'timestamp' => 'nullable|numeric',
         ]);
+
+        // Update trip status to in_progress if it's still planned
+        if ($trip->status === 'planned') {
+            $trip->update([
+                'status' => 'in_progress',
+                'started_at' => now(),
+            ]);
+            
+            // Also update order_trips pivot status
+            foreach ($trip->orders as $order) {
+                if ($order->pivot->status === 'pending') {
+                    $trip->orders()->updateExistingPivot($order->id, ['status' => 'picked']);
+                }
+            }
+        }
 
         // Store in trip meta
         $meta = $trip->meta ?? [];
@@ -36,10 +52,10 @@ class TripTrackingController extends AdminBaseController
             'updated_at' => now()->toIso8601String(),
         ];
         
-        // Store location history (last 50 points)
+        // Store location history (last 100 points)
         $history = $meta['location_history'] ?? [];
         array_unshift($history, $meta['current_location']);
-        $meta['location_history'] = array_slice($history, 0, 50);
+        $meta['location_history'] = array_slice($history, 0, 100);
         
         $trip->update(['meta' => $meta]);
         
@@ -49,7 +65,11 @@ class TripTrackingController extends AdminBaseController
         // Store for real-time access
         $this->storeRealtimeData($trip->id, $data);
         
-        return $this->successResponse('Location updated', $meta['current_location']);
+        return $this->successResponse('Location updated', [
+            'current_location' => $meta['current_location'],
+            'trip_status' => $trip->status,
+            'waypoints_status' => $trip->locations()->get(['id', 'status', 'eta_minutes', 'address']),
+        ]);
     }
     
     /**
@@ -79,8 +99,53 @@ class TripTrackingController extends AdminBaseController
             // If all locations are completed, mark trip as completed
             $pendingCount = $trip->locations()->where('status', 'pending')->count();
             if ($pendingCount === 0) {
-                $trip->update(['status' => 'completed']);
+                $trip->update([
+                    'status' => 'completed',
+                    'completed_at' => now(),
+                ]);
+                
+                // Update orders connected to this trip
+                foreach ($trip->orders as $order) {
+                    if ($order->pivot->status === 'picked') {
+                        $trip->orders()->updateExistingPivot($order->id, ['status' => 'delivered']);
+                        
+                        // Also update the order status if it's currently on_a_way
+                        if ($order->status === 'on_a_way') {
+                            $order->update(['status' => 'delivered']);
+                        }
+                    }
+                }
             }
+            
+            // For the remaining pending locations, update their ETAs
+            if ($pendingCount > 0) {
+                $this->recalculateETAs($trip, $lat, $lng);
+            }
+        } else {
+            // If not at the next waypoint, update the ETA based on current location
+            $this->recalculateETAs($trip, $lat, $lng);
+        }
+    }
+    
+    /**
+     * Recalculate ETAs for all pending locations based on current driver position
+     */
+    private function recalculateETAs(Trip $trip, float $currentLat, float $currentLng): void
+    {
+        $pendingLocations = $trip->locations()
+            ->where('status', 'pending')
+            ->orderBy('sequence')
+            ->get();
+            
+        if ($pendingLocations->isEmpty()) {
+            return;
+        }
+        
+        // Simple approximation: 1km takes about 3 minutes in urban areas
+        foreach ($pendingLocations as $location) {
+            $distance = $this->calculateDistance($currentLat, $currentLng, $location->lat, $location->lng);
+            $eta = max(5, round($distance * 3)); // Minimum 5 minutes
+            $location->update(['eta_minutes' => $eta]);
         }
     }
     
@@ -102,12 +167,15 @@ class TripTrackingController extends AdminBaseController
      */
     private function storeRealtimeData(int $tripId, array $data): void
     {
+        // For real apps, use Redis or a similar real-time data store
+        // For now, just use cache with a 10-minute expiry
         Cache::put("trip_location:$tripId", [
             'lat' => $data['lat'],
             'lng' => $data['lng'],
             'speed' => $data['speed'] ?? null,
             'bearing' => $data['bearing'] ?? null,
-            'timestamp' => now()->timestamp,
+            'timestamp' => $data['timestamp'] ?? now()->timestamp,
+            'updated_at' => now()->timestamp,
         ], now()->addMinutes(10));
     }
     
