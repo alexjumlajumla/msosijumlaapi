@@ -39,7 +39,7 @@
         "maksekeskus/maksekeskus-php": "v1.4.4",
         "matscode/paystack": "^1.9",
         "mercadopago/dx-php": "^2.5",
-        "orhanerday/open-ai": "^3.3",
+        "orhanerday/open-ai": "^5.3",
         "paytabscom/laravel_paytabs": "^1.4",
         "phpmailer/phpmailer": "^6.7",
         "predis/predis": "^2.1",

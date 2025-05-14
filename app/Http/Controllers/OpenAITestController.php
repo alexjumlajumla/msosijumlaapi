@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Log;
 class OpenAITestController extends Controller
 {
     /**
-     * Test OpenAI API with basic completion
+     * Test OpenAI API with chat completion
      * 
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
@@ -18,12 +18,13 @@ class OpenAITestController extends Controller
     public function testChatCompletion(Request $request)
     {
         try {
-            $apiKey = config('services.openai.api_key');
+            $apiKey = $request->input('api_key') ?: config('services.openai.api_key');
             
             if (!$apiKey) {
                 return response()->json([
                     'success' => false,
                     'message' => 'OpenAI API key is not configured',
+                    'error_type' => 'missing_api_key',
                     'steps_to_fix' => [
                         'Add OPENAI_API_KEY to your .env file',
                         'Ensure the API key is valid and has appropriate permissions'
@@ -31,72 +32,128 @@ class OpenAITestController extends Controller
                 ], 500);
             }
             
-            $openAi = new OpenAi($apiKey);
-            
-            $messages = $request->input('messages', []);
-            $model = $request->input('model', 'gpt-3.5-turbo-instruct');
-            $temperature = $request->input('temperature', 0.7);
-            $maxTokens = $request->input('max_tokens', 150);
-            
-            // Extract the prompt from messages
-            $prompt = '';
-            foreach ($messages as $message) {
-                if ($message['role'] === 'user') {
-                    $prompt .= $message['content'] . "\n";
-                }
-            }
-            
-            if (empty($prompt)) {
+            // Check if API key has the correct format
+            if (!preg_match('/^(sk-|sk-org-)/', $apiKey)) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'No user message provided in the request'
+                    'message' => 'Invalid API key format. OpenAI keys should start with "sk-" or "sk-org-"',
+                    'error_type' => 'invalid_format',
+                    'steps_to_fix' => [
+                        'Ensure you\'re using a valid API key from OpenAI',
+                        'Check that you\'ve copied the full API key correctly'
+                    ]
                 ], 400);
             }
             
-            // Use completion API for older versions of the package
-            $response = $openAi->completion([
+            $openAi = new OpenAi($apiKey);
+            
+            // Get messages from request or create a default test message
+            $messages = $request->input('messages', []);
+            $model = $request->input('model', 'gpt-3.5-turbo');
+            $temperature = $request->input('temperature', 0.7);
+            $maxTokens = $request->input('max_tokens', 150);
+            
+            // Format messages for the chat API
+            $formattedMessages = [];
+            
+            if (empty($messages)) {
+                $formattedMessages = [
+                    [
+                        'role' => 'system',
+                        'content' => 'You are a helpful assistant.'
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => 'Hello, this is a test message to verify API connectivity.'
+                    ]
+                ];
+                Log::info('No user message provided, using test prompt');
+            } else {
+                // Convert the input messages to OpenAI format
+                foreach ($messages as $message) {
+                    if (is_array($message) && isset($message['role']) && isset($message['content'])) {
+                        $formattedMessages[] = [
+                            'role' => $message['role'],
+                            'content' => $message['content']
+                        ];
+                    }
+                }
+                
+                // Add a system message if not present
+                if (!array_filter($formattedMessages, function($msg) { 
+                    return $msg['role'] === 'system'; 
+                })) {
+                    array_unshift($formattedMessages, [
+                        'role' => 'system',
+                        'content' => 'You are a helpful assistant.'
+                    ]);
+                }
+            }
+            
+            // Use chat API with the new package version
+            $response = $openAi->chat([
                 'model' => $model,
-                'prompt' => $prompt,
+                'messages' => $formattedMessages,
                 'temperature' => $temperature,
-                'max_tokens' => $maxTokens,
-                'frequency_penalty' => 0,
-                'presence_penalty' => 0
+                'max_tokens' => $maxTokens
             ]);
             
             $decodedResponse = json_decode($response, true);
             
-            // Format the response to mimic chat completion
-            if (isset($decodedResponse['choices']) && count($decodedResponse['choices']) > 0) {
-                $formattedResponse = [
-                    'id' => $decodedResponse['id'] ?? uniqid(),
-                    'object' => 'chat.completion',
-                    'created' => $decodedResponse['created'] ?? time(),
-                    'model' => $decodedResponse['model'] ?? $model,
-                    'choices' => [
-                        [
-                            'index' => 0,
-                            'message' => [
-                                'role' => 'assistant', 
-                                'content' => $decodedResponse['choices'][0]['text'] ?? ''
-                            ],
-                            'finish_reason' => $decodedResponse['choices'][0]['finish_reason'] ?? 'stop'
-                        ]
-                    ],
-                    'usage' => $decodedResponse['usage'] ?? [
-                        'prompt_tokens' => strlen($prompt) / 4,
-                        'completion_tokens' => strlen($decodedResponse['choices'][0]['text'] ?? '') / 4,
-                        'total_tokens' => (strlen($prompt) + strlen($decodedResponse['choices'][0]['text'] ?? '')) / 4
-                    ]
-                ];
+            // Check for specific error types
+            if (isset($decodedResponse['error'])) {
+                $errorMessage = $decodedResponse['error']['message'] ?? 'Unknown error';
+                $errorType = $decodedResponse['error']['type'] ?? 'unknown_error';
                 
+                // Handle quota exceeded errors
+                if (strpos($errorMessage, 'exceeded your current quota') !== false) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'OpenAI API error: ' . $errorMessage,
+                        'error_type' => 'quota_exceeded',
+                        'steps_to_fix' => [
+                            'Check your OpenAI account billing status',
+                            'Add a payment method or upgrade your plan',
+                            'Visit https://platform.openai.com/account/billing to manage your billing'
+                        ],
+                        'response' => $decodedResponse
+                    ], 402); // 402 Payment Required
+                }
+                
+                // Handle incorrect API key errors
+                if (strpos($errorMessage, 'Incorrect API key provided') !== false) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'OpenAI API error: ' . $errorMessage,
+                        'error_type' => 'invalid_key',
+                        'steps_to_fix' => [
+                            'Check that you\'re using the correct API key from your OpenAI account',
+                            'Ensure the API key is copied correctly with no extra spaces',
+                            'Try generating a new API key from https://platform.openai.com/account/api-keys'
+                        ],
+                        'response' => $decodedResponse
+                    ], 401); // 401 Unauthorized
+                }
+                
+                // General error handling
+                return response()->json([
+                    'success' => false,
+                    'message' => 'OpenAI API error: ' . $errorMessage,
+                    'error_type' => $errorType,
+                    'response' => $decodedResponse
+                ], 500);
+            }
+            
+            // Format the successful response
+            if (isset($decodedResponse['choices']) && count($decodedResponse['choices']) > 0) {
                 return response()->json([
                     'success' => true,
-                    'response' => $formattedResponse
+                    'response' => $decodedResponse
                 ]);
             } else {
                 return response()->json([
                     'success' => false,
-                    'message' => 'OpenAI API error: ' . ($decodedResponse['error']['message'] ?? 'Unknown error'),
+                    'message' => 'OpenAI API error: Invalid response format',
                     'response' => $decodedResponse
                 ], 500);
             }

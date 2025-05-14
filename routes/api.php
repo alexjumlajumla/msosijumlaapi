@@ -1760,20 +1760,21 @@ Route::get('/test-openai', function() {
         $apiKey = config('services.openai.api_key');
         $openAi = new Orhanerday\OpenAi\OpenAi($apiKey);
         
+        // Use chat API with the new package format
         $response = $openAi->chat([
             'model' => 'gpt-3.5-turbo',
             'messages' => [
                 [
                     'role' => 'system',
-                    'content' => 'You are a helpful assistant.',
+                    'content' => 'You are a helpful assistant.'
                 ],
                 [
                     'role' => 'user',
-                    'content' => 'Test connection with a short response',
-                ],
+                    'content' => 'Test connection with a short response'
+                ]
             ],
             'temperature' => 0.7,
-            'max_tokens' => 10,
+            'max_tokens' => 10
         ]);
         
         $decoded = json_decode($response, true);
@@ -1796,7 +1797,7 @@ Route::get('/test-openai', function() {
     }
 });
 
-// Direct voice test endpoint (outside of any group)
+// Update the voice-test-api route
 Route::post('/api/voice-test-api', function() {
     try {
         $request = request();
@@ -1827,20 +1828,21 @@ Route::post('/api/voice-test-api', function() {
             $apiKey = config('services.openai.api_key');
             $openAi = new Orhanerday\OpenAi\OpenAi($apiKey);
             
+            // Use chat API with the new package format
             $response = $openAi->chat([
                 'model' => 'gpt-3.5-turbo',
                 'messages' => [
                     [
                         'role' => 'system',
-                        'content' => 'You are a helpful assistant for a food ordering system. Extract key food items, quantities, and special instructions from the user\'s voice transcription.',
+                        'content' => 'You are a helpful assistant for a food ordering system. Extract key food items, quantities, and special instructions from the user\'s voice transcription.'
                     ],
                     [
                         'role' => 'user',
-                        'content' => $transcriptionResult['text'],
-                    ],
+                        'content' => $transcriptionResult['text']
+                    ]
                 ],
                 'temperature' => 0.7,
-                'max_tokens' => 150,
+                'max_tokens' => 150
             ]);
             
             $openAiResult = json_decode($response, true);

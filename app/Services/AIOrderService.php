@@ -8,77 +8,123 @@ use App\Models\AIAssistantLog;
 use App\Models\OrderDetail;
 use App\Models\Order;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class AIOrderService
 {
     protected OpenAi $openAi;
+    protected bool $apiInitialized = false;
 
     public function __construct()
     {
-        $this->openAi = new OpenAi(config('services.openai.api_key'));
+        $apiKey = config('services.openai.api_key');
+        
+        if (!empty($apiKey)) {
+            try {
+                $this->openAi = new OpenAi($apiKey);
+                $this->apiInitialized = true;
+            } catch (\Exception $e) {
+                Log::error('Failed to initialize OpenAI client: ' . $e->getMessage());
+                $this->apiInitialized = false;
+            }
+        } else {
+            $this->apiInitialized = false;
+        }
     }
 
     public function processOrderIntent(string $transcription, ?User $user = null): array
     {
+        if (!$this->apiInitialized) {
+            Log::warning('Attempted to process order intent but OpenAI API is not initialized');
+            return [
+                'error' => 'OpenAI API is not properly configured',
+                'intent' => 'Unknown'
+            ];
+        }
+        
         // Get user order history for personalization if user is authenticated
         $userContext = '';
         if ($user) {
             $userContext = $this->getUserOrderContext($user);
         }
 
-        $prompt = <<<EOT
-Extract information from the following food order request: "$transcription"
-
-$userContext
-
-Return a JSON object with the following structure:
+        // Create a system message and user message for chat completion
+        $systemMessage = "You are a food ordering assistant that specializes in understanding customer preferences and dietary requirements. Extract structured information from voice transcripts.";
+        
+        $userMessage = "Extract information from the following food order request: \"$transcription\"\n\n";
+        $userMessage .= $userContext . "\n\n";
+        $userMessage .= "Return a JSON object with the following structure:
 {
-  "intent": "The main food or dish the user wants",
-  "filters": ["List of dietary preferences like vegetarian, vegan, gluten-free, etc."],
-  "cuisine_type": "The type of cuisine if mentioned (e.g., Italian, Chinese, etc.)",
-  "exclusions": ["Ingredients the user wants to avoid"],
-  "portion_size": "Regular, Large, etc. if specified",
-  "spice_level": "Mild, Medium, Hot if specified"
+  \"intent\": \"The main food or dish the user wants\",
+  \"filters\": [\"List of dietary preferences like vegetarian, vegan, gluten-free, etc.\"],
+  \"cuisine_type\": \"The type of cuisine if mentioned (e.g., Italian, Chinese, etc.)\",
+  \"exclusions\": [\"Ingredients the user wants to avoid\"],
+  \"portion_size\": \"Regular, Large, etc. if specified\",
+  \"spice_level\": \"Mild, Medium, Hot if specified\"
 }
 
-Focus on identifying specific food preferences and requirements. Infer reasonable values if some fields are uncertain.
-EOT;
-
-        // Use completion API instead of chat API for older versions of the package
-        $systemInstruction = "You are a food ordering assistant that specializes in understanding customer preferences and dietary requirements. Extract structured information from voice transcripts.";
-        $fullPrompt = $systemInstruction . "\n\n" . $prompt;
+Focus on identifying specific food preferences and requirements. Infer reasonable values if some fields are uncertain.";
         
-        $response = $this->openAi->completion([
-            'model' => 'gpt-3.5-turbo-instruct',
-            'prompt' => $fullPrompt,
-            'temperature' => 0.3,
-            'max_tokens' => 500,
-            'frequency_penalty' => 0,
-            'presence_penalty' => 0
-        ]);
-
-        $decoded = json_decode($response, true);
-        $content = $decoded['choices'][0]['text'] ?? '';
-
-        // Try to extract JSON from the response
         try {
-            $jsonStart = strpos($content, '{');
-            $jsonEnd = strrpos($content, '}');
-            if ($jsonStart !== false && $jsonEnd !== false) {
-                $jsonContent = substr($content, $jsonStart, $jsonEnd - $jsonStart + 1);
-                $orderData = json_decode($jsonContent, true) ?? [];
-            } else {
-                $orderData = json_decode($content, true) ?? [];
+            // Use chat completion with the new API
+            $response = $this->openAi->chat([
+                'model' => 'gpt-3.5-turbo',
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => $systemMessage
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => $userMessage
+                    ]
+                ],
+                'temperature' => 0.3,
+                'max_tokens' => 500,
+            ]);
+            
+            $decoded = json_decode($response, true);
+            
+            // Check for API errors
+            if (isset($decoded['error'])) {
+                $errorMessage = $decoded['error']['message'] ?? 'Unknown OpenAI API error';
+                Log::error('OpenAI API error during processOrderIntent: ' . $errorMessage);
+                
+                return [
+                    'error' => $errorMessage,
+                    'intent' => 'Unknown'
+                ];
             }
+            
+            // Extract content from the chat completion response
+            $content = $decoded['choices'][0]['message']['content'] ?? '';
+    
+            // Try to extract JSON from the response
+            try {
+                $jsonStart = strpos($content, '{');
+                $jsonEnd = strrpos($content, '}');
+                if ($jsonStart !== false && $jsonEnd !== false) {
+                    $jsonContent = substr($content, $jsonStart, $jsonEnd - $jsonStart + 1);
+                    $orderData = json_decode($jsonContent, true) ?? [];
+                } else {
+                    $orderData = json_decode($content, true) ?? [];
+                }
+            } catch (\Exception $e) {
+                Log::error('Error parsing JSON from OpenAI response: ' . $e->getMessage());
+                $orderData = [];
+            }
+            
+            // Add additional processing to handle ambiguities and alternatives
+            $orderData = $this->enhanceOrderData($orderData, $transcription);
+            
+            return $orderData;
         } catch (\Exception $e) {
-            \Log::error('Error parsing JSON from OpenAI response: ' . $e->getMessage());
-            $orderData = [];
+            Log::error('Exception during OpenAI processOrderIntent: ' . $e->getMessage());
+            return [
+                'error' => 'Failed to process order: ' . $e->getMessage(),
+                'intent' => 'Unknown'
+            ];
         }
-        
-        // Add additional processing to handle ambiguities and alternatives
-        $orderData = $this->enhanceOrderData($orderData, $transcription);
-        
-        return $orderData;
     }
     
     /**
@@ -165,18 +211,42 @@ EOT;
      */
     public function generateRecommendation(array $orderData): string
     {
-        $prompt = "You are a helpful food recommendation assistant. Generate a personalized food recommendation based on these preferences: " . json_encode($orderData);
+        if (!$this->apiInitialized) {
+            Log::warning('Attempted to generate recommendation but OpenAI API is not initialized');
+            return 'Unable to generate recommendation due to API configuration issues.';
+        }
         
-        $response = $this->openAi->completion([
-            'model' => 'gpt-3.5-turbo-instruct',
-            'prompt' => $prompt,
-            'temperature' => 0.7,
-            'max_tokens' => 150,
-            'frequency_penalty' => 0,
-            'presence_penalty' => 0
-        ]);
-        
-        $decoded = json_decode($response, true);
-        return $decoded['choices'][0]['text'] ?? 'No recommendation available';
+        try {
+            // Use chat completion with the new API
+            $response = $this->openAi->chat([
+                'model' => 'gpt-3.5-turbo',
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'You are a helpful food recommendation assistant.'
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => 'Generate a personalized food recommendation based on these preferences: ' . json_encode($orderData)
+                    ]
+                ],
+                'temperature' => 0.7,
+                'max_tokens' => 150,
+            ]);
+            
+            $decoded = json_decode($response, true);
+            
+            // Check for API errors
+            if (isset($decoded['error'])) {
+                $errorMessage = $decoded['error']['message'] ?? 'Unknown OpenAI API error';
+                Log::error('OpenAI API error during generateRecommendation: ' . $errorMessage);
+                return 'Unable to generate recommendation: ' . $errorMessage;
+            }
+            
+            return $decoded['choices'][0]['message']['content'] ?? 'No recommendation available';
+        } catch (\Exception $e) {
+            Log::error('Exception during OpenAI generateRecommendation: ' . $e->getMessage());
+            return 'Unable to generate recommendation due to an error.';
+        }
     }
 } 

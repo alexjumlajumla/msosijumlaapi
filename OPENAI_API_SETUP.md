@@ -22,14 +22,15 @@ This project uses OpenAI's API for various AI-powered features including voice p
    php artisan config:clear
    ```
 
-## Model Compatibility
+## Recent Updates
 
-This application uses the `orhanerday/open-ai` PHP library (version 3.5), which has specific model compatibility requirements:
+This application now uses `orhanerday/open-ai` PHP library (version 5.3), which has been updated to support:
 
-- **Compatible Models:** This version works with `gpt-3.5-turbo-instruct` using the `completion()` method
-- **Incompatible Models:** The regular `gpt-3.5-turbo` model requires methods not available in this library version
+- The latest chat completion API formats
+- All modern OpenAI models like `gpt-3.5-turbo` and `gpt-4`
+- Improved error handling and response formatting
 
-If you encounter errors about "Failed to process OpenAI request", it may be because the application is trying to use an incompatible model with the wrong method. The application has been updated to use compatible models.
+The legacy `completion()` method with instruct models has been replaced with the more modern `chat()` method format throughout the codebase.
 
 ## Troubleshooting Common Issues
 
@@ -50,17 +51,17 @@ If you see: `API key validation failed: Incorrect API key provided`
 **Solution:**
 1. Ensure you've copied the full API key correctly
 2. Check for extra spaces or newlines in your key
-3. Verify the key format - it should start with `sk-` (older keys) or `sk-proj-` (newer project-based keys)
+3. Verify the key format - it should start with `sk-` (older keys) or `sk-org-` (newer keys)
 4. Try generating a new API key
 5. Make sure you're using the key in the correct environment where it was created
 
 ### API Key Format
 
-OpenAI has two types of API key formats:
+OpenAI has different types of API key formats:
 - Regular keys start with `sk-` (e.g., `sk-ABC123...`)
-- Project-based keys start with `sk-proj-` (e.g., `sk-proj-ABC123...`)
+- Organization keys start with `sk-org-` (e.g., `sk-org-ABC123...`)
 
-Both types should work with our API client, but make sure you're using the exact format without any modifications.
+All key types should work with our updated API client.
 
 ### Configuration Cache Issues
 
@@ -83,5 +84,6 @@ You can test if your API key is working properly by:
 
 1. In your browser, navigate to: `/api/test-openai-key` (this will use the key in your .env file)
 2. Or provide a key directly: `/api/test-openai-key?api_key=sk-YOUR_KEY_HERE`
+3. You can also run our test script directly: `php test-openai-direct.php`
 
 A successful response means your OpenAI integration is working correctly. 

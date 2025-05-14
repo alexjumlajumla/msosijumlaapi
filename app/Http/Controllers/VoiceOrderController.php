@@ -455,18 +455,34 @@ class VoiceOrderController extends Controller
                 ]);
             }
 
+            // Check if API key has the correct format
+            if (!preg_match('/^(sk-|sk-org-)/', $apiKey)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid API key format. OpenAI keys should start with "sk-" or "sk-org-"',
+                    'valid' => false,
+                    'error_type' => 'invalid_format'
+                ]);
+            }
+
             // Create a test instance of the OpenAI client
             $openAi = new \Orhanerday\OpenAi\OpenAi($apiKey);
             
-            // Try to make a simple API call using the completion endpoint
-            // This is more likely to work with older versions of the package
-            $response = $openAi->completion([
-                'model' => 'gpt-3.5-turbo-instruct',
-                'prompt' => 'Say hello in one word',
+            // Use chat completion API for testing
+            $response = $openAi->chat([
+                'model' => 'gpt-3.5-turbo',
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'You are a helpful assistant.'
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => 'Say hello in one word'
+                    ]
+                ],
                 'temperature' => 0.7,
-                'max_tokens' => 10,
-                'frequency_penalty' => 0,
-                'presence_penalty' => 0
+                'max_tokens' => 10
             ]);
             
             $decoded = json_decode($response, true);
@@ -479,15 +495,38 @@ class VoiceOrderController extends Controller
                     'message' => 'API key is valid',
                     'valid' => true,
                     'model' => $model,
-                    'response_sample' => $decoded['choices'][0]['text'] ?? ''
+                    'response_sample' => $decoded['choices'][0]['message']['content'] ?? ''
                 ]);
             } else {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'API key validation failed: ' . ($decoded['error']['message'] ?? 'Unknown error'),
-                    'valid' => false,
-                    'response' => $decoded
-                ]);
+                // Handle specific error cases with more helpful messages
+                $errorType = $decoded['error']['type'] ?? '';
+                $errorMessage = $decoded['error']['message'] ?? 'Unknown error';
+                
+                if (strpos($errorMessage, 'exceeded your current quota') !== false) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'API key validation failed: ' . $errorMessage,
+                        'valid' => false,
+                        'error_type' => 'quota_exceeded',
+                        'response' => $decoded
+                    ]);
+                } else if (strpos($errorMessage, 'Incorrect API key provided') !== false) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'API key validation failed: ' . $errorMessage,
+                        'valid' => false,
+                        'error_type' => 'invalid_key',
+                        'response' => $decoded
+                    ]);
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'API key validation failed: ' . $errorMessage,
+                        'valid' => false,
+                        'error_type' => $errorType,
+                        'response' => $decoded
+                    ]);
+                }
             }
         } catch (\Exception $e) {
             return response()->json([
