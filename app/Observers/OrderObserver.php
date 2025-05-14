@@ -69,6 +69,19 @@ class OrderObserver
 
             // Associate the order with the trip
             $order->trip()->attach($trip->id, ['sequence' => 1, 'status' => 'pending']);
+            
+            // Add a demo delivery location for the trip - this is the key change to fix the empty map
+            if ($trip && $order->shop) {
+                $shop = $order->shop;
+                $trip->locations()->create([
+                    'address' => $shop->address ?? 'Delivery destination', 
+                    'lat' => $shop->location['lat'] ?? ($shop->location['latitude'] ?? 0),
+                    'lng' => $shop->location['lng'] ?? ($shop->location['longitude'] ?? 0),
+                    'sequence' => 0,
+                    'eta_minutes' => 30,
+                    'status' => 'pending'
+                ]);
+            }
         } catch (Throwable $e) {
             // Log the error but don't stop order creation
             Log::error('Error creating trip for order #' . $order->id . ': ' . $e->getMessage());

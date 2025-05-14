@@ -76,16 +76,40 @@ class TripController extends UserBaseController
                 ]);
             }
 
-            // Find the trip for this order
-            $trip = Trip::with(['driver', 'vehicle', 'locations'])
-                ->where('order_id', $orderId)
-                ->first();
-
-            if (!$trip) {
-                return $this->onErrorResponse([
-                    'code'    => ResponseError::ERROR_404,
-                    'message' => __('errors.' . ResponseError::ORDER_TRIP_NOT_FOUND, locale: $this->language)
+            // Find the trip for this order using the many-to-many relationship
+            $orderTrip = $order->trips()->first();
+            
+            if (!$orderTrip) {
+                // If no trip is found in the many-to-many relationship, try the old hasOne relationship
+                $trip = $order->trip;
+                
+                if (!$trip) {
+                    return $this->onErrorResponse([
+                        'code'    => ResponseError::ERROR_404,
+                        'message' => __('errors.' . ResponseError::ORDER_TRIP_NOT_FOUND, locale: $this->language)
+                    ]);
+                }
+            } else {
+                $trip = $orderTrip;
+            }
+            
+            // Load the trip's relationships
+            $trip->load(['driver', 'vehicle', 'locations']);
+            
+            // If there are no locations, create a default one
+            if ($trip->locations->isEmpty() && $order->shop) {
+                $shop = $order->shop;
+                $trip->locations()->create([
+                    'address' => $shop->address ?? 'Delivery destination', 
+                    'lat' => $shop->location['lat'] ?? ($shop->location['latitude'] ?? 0),
+                    'lng' => $shop->location['lng'] ?? ($shop->location['longitude'] ?? 0),
+                    'sequence' => 0,
+                    'eta_minutes' => 30,
+                    'status' => 'pending'
                 ]);
+                
+                // Reload locations
+                $trip->load('locations');
             }
 
             return $this->successResponse(
