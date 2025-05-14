@@ -76,25 +76,15 @@ class TripController extends UserBaseController
                 ]);
             }
 
-            // Find the trip for this order using the many-to-many relationship
-            $orderTrip = $order->trips()->first();
+            // Get the first trip for this order
+            $trip = $order->trips()->with(['driver', 'vehicle', 'locations'])->first();
             
-            if (!$orderTrip) {
-                // If no trip is found in the many-to-many relationship, try the old hasOne relationship
-                $trip = $order->trip;
-                
-                if (!$trip) {
-                    return $this->onErrorResponse([
-                        'code'    => ResponseError::ERROR_404,
-                        'message' => __('errors.' . ResponseError::ORDER_TRIP_NOT_FOUND, locale: $this->language)
-                    ]);
-                }
-            } else {
-                $trip = $orderTrip;
+            if (!$trip) {
+                return $this->onErrorResponse([
+                    'code'    => ResponseError::ERROR_404,
+                    'message' => __('errors.' . ResponseError::ORDER_TRIP_NOT_FOUND, locale: $this->language)
+                ]);
             }
-            
-            // Load the trip's relationships
-            $trip->load(['driver', 'vehicle', 'locations']);
             
             // If there are no locations, create a default one
             if ($trip->locations->isEmpty() && $order->shop) {

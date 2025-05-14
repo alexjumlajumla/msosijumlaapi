@@ -519,15 +519,8 @@ class Order extends Model
 	 */
 	public function trip()
 	{
-		// Use the first trip from the trips relationship to maintain backward compatibility
-		return $this->hasOneThrough(
-			Trip::class,
-			\DB::raw('(select distinct order_id, trip_id from order_trips) as ot'),
-			'order_id',
-			'id',
-			'id',
-			'trip_id'
-		);
+		// Simply use the first trip from the many-to-many relationship
+		return $this->trips()->first();
 	}
 
 	/**
