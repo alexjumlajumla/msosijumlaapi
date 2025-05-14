@@ -53,7 +53,7 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
     Route::post('/test-openai-key', [VoiceOrderController::class, 'testOpenAIKey']);
 
     // OpenAI Testing
-    Route::post('/openai-chat', [OpenAITestController::class, 'testChatCompletion']);
+    Route::match(['GET', 'POST'], '/openai-chat', [OpenAITestController::class, 'testChatCompletion']);
 
     Route::post('/auth/resend-verify',                  [VerifyAuthController::class, 'resendVerify'])
         ->middleware('sessions');
@@ -108,7 +108,7 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
         Route::post('voice-order/feedback', [VoiceOrderController::class, 'processFeedback']);
         Route::get('voice-order/history', [VoiceOrderController::class, 'getOrderHistory']);
         Route::post('test-openai-key', [VoiceOrderController::class, 'testOpenAIKey']);
-        Route::post('openai-chat', [OpenAITestController::class, 'testChatCompletion']);
+        Route::match(['GET', 'POST'], 'openai-chat', [OpenAITestController::class, 'testChatCompletion']);
 
         /* Languages */
         Route::get('languages/default',             [Rest\LanguageController::class, 'default']);
@@ -1875,4 +1875,25 @@ Route::post('/api/voice-test-api', function() {
             'line' => $e->getLine()
         ], 500);
     }
+});
+
+// Add a simple OpenAI test endpoint
+Route::get('/test-openai-integration', [OpenAITestController::class, 'testChatCompletion']);
+
+// Add a debug endpoint to check OpenAI configuration
+Route::get('/debug-openai-config', function() {
+    $apiKey = config('services.openai.api_key');
+    $maskedKey = '';
+    
+    if ($apiKey) {
+        $keyLength = strlen($apiKey);
+        $maskedKey = substr($apiKey, 0, 4) . str_repeat('*', $keyLength - 8) . substr($apiKey, -4);
+    }
+    
+    return response()->json([
+        'openai_api_key_set' => !empty($apiKey),
+        'openai_api_key_masked' => $maskedKey,
+        'api_key_format_valid' => !empty($apiKey) && preg_match('/^(sk-|sk-org-)/', $apiKey),
+        'config_loaded_from' => app()->environmentFile()
+    ]);
 });

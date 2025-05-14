@@ -18,6 +18,7 @@ class OpenAITestController extends Controller
     public function testChatCompletion(Request $request)
     {
         try {
+            $isGetRequest = $request->isMethod('get');
             $apiKey = $request->input('api_key') ?: config('services.openai.api_key');
             
             if (!$apiKey) {
@@ -47,16 +48,9 @@ class OpenAITestController extends Controller
             
             $openAi = new OpenAi($apiKey);
             
-            // Get messages from request or create a default test message
-            $messages = $request->input('messages', []);
-            $model = $request->input('model', 'gpt-3.5-turbo');
-            $temperature = $request->input('temperature', 0.7);
-            $maxTokens = $request->input('max_tokens', 150);
-            
-            // Format messages for the chat API
-            $formattedMessages = [];
-            
-            if (empty($messages)) {
+            // For GET requests, use a predefined simple test message
+            if ($isGetRequest) {
+                Log::info('Handling GET request to OpenAI chat endpoint with simple test');
                 $formattedMessages = [
                     [
                         'role' => 'system',
@@ -64,29 +58,54 @@ class OpenAITestController extends Controller
                     ],
                     [
                         'role' => 'user',
-                        'content' => 'Hello, this is a test message to verify API connectivity.'
+                        'content' => 'Say hello in a friendly way'
                     ]
                 ];
-                Log::info('No user message provided, using test prompt');
+                $model = 'gpt-3.5-turbo';
+                $temperature = 0.7;
+                $maxTokens = 50;
             } else {
-                // Convert the input messages to OpenAI format
-                foreach ($messages as $message) {
-                    if (is_array($message) && isset($message['role']) && isset($message['content'])) {
-                        $formattedMessages[] = [
-                            'role' => $message['role'],
-                            'content' => $message['content']
-                        ];
-                    }
-                }
+                // For POST requests, get parameters from the request body
+                $messages = $request->input('messages', []);
+                $model = $request->input('model', 'gpt-3.5-turbo');
+                $temperature = $request->input('temperature', 0.7);
+                $maxTokens = $request->input('max_tokens', 150);
                 
-                // Add a system message if not present
-                if (!array_filter($formattedMessages, function($msg) { 
-                    return $msg['role'] === 'system'; 
-                })) {
-                    array_unshift($formattedMessages, [
-                        'role' => 'system',
-                        'content' => 'You are a helpful assistant.'
-                    ]);
+                // Format messages for the chat API
+                $formattedMessages = [];
+                
+                if (empty($messages)) {
+                    $formattedMessages = [
+                        [
+                            'role' => 'system',
+                            'content' => 'You are a helpful assistant.'
+                        ],
+                        [
+                            'role' => 'user',
+                            'content' => 'Hello, this is a test message to verify API connectivity.'
+                        ]
+                    ];
+                    Log::info('No user message provided, using test prompt');
+                } else {
+                    // Convert the input messages to OpenAI format
+                    foreach ($messages as $message) {
+                        if (is_array($message) && isset($message['role']) && isset($message['content'])) {
+                            $formattedMessages[] = [
+                                'role' => $message['role'],
+                                'content' => $message['content']
+                            ];
+                        }
+                    }
+                    
+                    // Add a system message if not present
+                    if (!array_filter($formattedMessages, function($msg) { 
+                        return $msg['role'] === 'system'; 
+                    })) {
+                        array_unshift($formattedMessages, [
+                            'role' => 'system',
+                            'content' => 'You are a helpful assistant.'
+                        ]);
+                    }
                 }
             }
             
@@ -146,6 +165,17 @@ class OpenAITestController extends Controller
             
             // Format the successful response
             if (isset($decodedResponse['choices']) && count($decodedResponse['choices']) > 0) {
+                // For GET requests, simplify the response format
+                if ($isGetRequest) {
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'OpenAI API is working properly',
+                        'content' => $decodedResponse['choices'][0]['message']['content'] ?? '',
+                        'model' => $decodedResponse['model'] ?? 'unknown'
+                    ]);
+                }
+                
+                // For POST requests, return the full response data
                 return response()->json([
                     'success' => true,
                     'response' => $decodedResponse

@@ -32,6 +32,34 @@ This application now uses `orhanerday/open-ai` PHP library (version 5.3), which 
 
 The legacy `completion()` method with instruct models has been replaced with the more modern `chat()` method format throughout the codebase.
 
+## Available OpenAI Test Endpoints
+
+The following endpoints are available for testing your OpenAI integration:
+
+1. **Test API Key**: `api/v1/test-openai-key` (POST)
+   - Validates your OpenAI API key
+   - Example response: `{"success":true,"message":"API key is valid","valid":true,"model":"gpt-3.5-turbo"}`
+
+2. **Test Chat**: `api/v1/openai-chat` (GET or POST)
+   - GET: Performs a simple test chat with OpenAI
+   - POST: Sends your custom messages to OpenAI
+   - POST body example:
+     ```json
+     {
+       "messages": [
+         {"role": "system", "content": "You are a helpful assistant."},
+         {"role": "user", "content": "Hello, how are you?"}
+       ]
+     }
+     ```
+
+3. **Integration Test**: `api/v1/test-openai-integration` (GET)
+   - Quick test of OpenAI integration that works from a browser
+
+4. **Debug Configuration**: `api/v1/debug-openai-config` (GET)
+   - Shows information about your OpenAI configuration
+   - Does not use the API, only checks local settings
+
 ## Troubleshooting Common Issues
 
 ### Quota Exceeded Error
@@ -78,12 +106,22 @@ If you've updated your `.env` or `.env.local` file but the application is still 
    ./vendor/bin/sail up -d
    ```
 
+### HTTP Method Not Allowed Error
+
+If you see: `The GET method is not supported for this route. Supported methods: POST.`
+
+**Solution:**
+1. Make sure you're using the correct HTTP method for the endpoint
+2. For the `/openai-chat` endpoint, both GET and POST methods are now supported
+3. Check if your frontend code is using the correct method
+
 ## Testing Your API Key
 
 You can test if your API key is working properly by:
 
-1. In your browser, navigate to: `/api/test-openai-key` (this will use the key in your .env file)
-2. Or provide a key directly: `/api/test-openai-key?api_key=sk-YOUR_KEY_HERE`
+1. In your browser, navigate to: `/api/v1/test-openai-key` (this will use the key in your .env file)
+2. Or provide a key directly: `/api/v1/test-openai-key?api_key=sk-YOUR_KEY_HERE`
 3. You can also run our test script directly: `php test-openai-direct.php`
+4. Try the integration test endpoint in your browser: `/api/v1/test-openai-integration`
 
 A successful response means your OpenAI integration is working correctly. 
