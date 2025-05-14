@@ -4,7 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-class CreateAiAssistantLogsTableV2 extends Migration
+return new class extends Migration
 {
     /**
      * Run the migrations.
@@ -13,7 +13,7 @@ class CreateAiAssistantLogsTableV2 extends Migration
      */
     public function up()
     {
-        Schema::create('a_i_assistant_logs', function (Blueprint $table) {
+        Schema::create('ai_assistant_logs', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->nullable();
             $table->string('request_type')->nullable(); // voice_order, text_order, etc.
@@ -41,6 +41,6 @@ class CreateAiAssistantLogsTableV2 extends Migration
      */
     public function down()
     {
-        Schema::dropIfExists('a_i_assistant_logs');
+        Schema::dropIfExists('ai_assistant_logs');
     }
-} 
+}; 
