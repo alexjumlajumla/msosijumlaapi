@@ -7,6 +7,7 @@ use App\Http\Controllers\Web\TelegramBotController;
 use App\Models\Page;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\VoiceOrderController;
+use App\Http\Controllers\OpenAITestController;
 
 /*
 |--------------------------------------------------------------------------
@@ -49,6 +50,9 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
     Route::post('/voice-order/repeat', [VoiceOrderController::class, 'repeatOrder']);
     Route::post('/voice-order/feedback', [VoiceOrderController::class, 'processFeedback']);
     Route::get('/voice-order/history', [VoiceOrderController::class, 'getOrderHistory']);
+
+    // OpenAI Testing
+    Route::post('/openai-chat', [OpenAITestController::class, 'testChatCompletion']);
 
     Route::post('/auth/resend-verify',                  [VerifyAuthController::class, 'resendVerify'])
         ->middleware('sessions');
@@ -102,50 +106,7 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
         Route::post('voice-order/repeat', [VoiceOrderController::class, 'repeatOrder']);
         Route::post('voice-order/feedback', [VoiceOrderController::class, 'processFeedback']);
         Route::get('voice-order/history', [VoiceOrderController::class, 'getOrderHistory']);
-        Route::post('openai-chat', function() {
-            try {
-                $apiKey = config('services.openai.api_key');
-                $openAi = new Orhanerday\OpenAi\OpenAi($apiKey);
-                
-                $request = request();
-                $messages = $request->input('messages', []);
-                
-                if (empty($messages)) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'No messages provided in the request'
-                    ], 400);
-                }
-                
-                $response = $openAi->chat([
-                    'model' => $request->input('model', 'gpt-3.5-turbo'),
-                    'messages' => $messages,
-                    'temperature' => $request->input('temperature', 0.7),
-                    'max_tokens' => $request->input('max_tokens', 150),
-                ]);
-                
-                $decoded = json_decode($response, true);
-                
-                if (isset($decoded['error'])) {
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'OpenAI API Error: ' . $decoded['error']['message'],
-                        'error' => $decoded['error']
-                    ], 500);
-                }
-                
-                return response()->json([
-                    'success' => true,
-                    'response' => $decoded
-                ]);
-            } catch (\Exception $e) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'OpenAI chat failed: ' . $e->getMessage(),
-                    'error' => $e->getMessage()
-                ], 500);
-            }
-        });
+        Route::post('openai-chat', [OpenAITestController::class, 'testChatCompletion']);
 
         /* Languages */
         Route::get('languages/default',             [Rest\LanguageController::class, 'default']);
