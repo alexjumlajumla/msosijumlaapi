@@ -124,4 +124,51 @@ You can test if your API key is working properly by:
 3. You can also run our test script directly: `php test-openai-direct.php`
 4. Try the integration test endpoint in your browser: `/api/v1/test-openai-integration`
 
-A successful response means your OpenAI integration is working correctly. 
+A successful response means your OpenAI integration is working correctly.
+
+## Understanding Different OpenAI Models
+
+When using the OpenAI API in this application, it's important to understand the difference between model types:
+
+### Chat Models vs. Instruct Models
+
+1. **Chat Models** (e.g., `gpt-3.5-turbo`, `gpt-4`)
+   - Used with the chat completions API endpoint
+   - Require message format with roles (system, user, assistant)
+   - Best for conversational applications
+   - Example: `gpt-3.5-turbo`
+
+2. **Instruct Models** (e.g., `gpt-3.5-turbo-instruct`)
+   - Used with the completions API endpoint
+   - Take a single prompt text input
+   - Often used for simpler completion tasks
+   - Example: `gpt-3.5-turbo-instruct`
+
+Our application now automatically detects the model type and uses the appropriate API endpoint. If you want to use the `gpt-3.5-turbo-instruct` model, our backend will automatically use the completions API instead of the chat API.
+
+### Model Selection in API Requests
+
+When making requests to the `/api/v1/openai-chat` endpoint, you can specify the model:
+
+**For chat models:**
+```json
+{
+  "model": "gpt-3.5-turbo",
+  "messages": [
+    {"role": "system", "content": "You are a helpful assistant."},
+    {"role": "user", "content": "Hello, how are you?"}
+  ]
+}
+```
+
+**For instruct models:**
+```json
+{
+  "model": "gpt-3.5-turbo-instruct",
+  "messages": [
+    {"role": "user", "content": "Write a short poem about technology."}
+  ]
+}
+```
+
+The application will detect the "instruct" in the model name and route your request accordingly. 

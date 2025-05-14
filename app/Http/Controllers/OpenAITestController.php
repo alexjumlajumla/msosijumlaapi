@@ -51,6 +51,7 @@ class OpenAITestController extends Controller
             // For GET requests, use a predefined simple test message
             if ($isGetRequest) {
                 Log::info('Handling GET request to OpenAI chat endpoint with simple test');
+                $model = 'gpt-3.5-turbo'; // Always use a chat model for GET requests
                 $formattedMessages = [
                     [
                         'role' => 'system',
@@ -61,9 +62,9 @@ class OpenAITestController extends Controller
                         'content' => 'Say hello in a friendly way'
                     ]
                 ];
-                $model = 'gpt-3.5-turbo';
                 $temperature = 0.7;
                 $maxTokens = 50;
+                $prompt = null; // No prompt needed for chat models
             } else {
                 // For POST requests, get parameters from the request body
                 $messages = $request->input('messages', []);
@@ -71,51 +72,102 @@ class OpenAITestController extends Controller
                 $temperature = $request->input('temperature', 0.7);
                 $maxTokens = $request->input('max_tokens', 150);
                 
-                // Format messages for the chat API
-                $formattedMessages = [];
+                // Check if this is an instruct model
+                $isInstructModel = strpos($model, 'instruct') !== false;
                 
-                if (empty($messages)) {
-                    $formattedMessages = [
-                        [
-                            'role' => 'system',
-                            'content' => 'You are a helpful assistant.'
-                        ],
-                        [
-                            'role' => 'user',
-                            'content' => 'Hello, this is a test message to verify API connectivity.'
-                        ]
-                    ];
-                    Log::info('No user message provided, using test prompt');
-                } else {
-                    // Convert the input messages to OpenAI format
+                if ($isInstructModel) {
+                    // For instruct models, extract text from user messages to create a prompt
+                    $prompt = '';
                     foreach ($messages as $message) {
-                        if (is_array($message) && isset($message['role']) && isset($message['content'])) {
-                            $formattedMessages[] = [
-                                'role' => $message['role'],
-                                'content' => $message['content']
-                            ];
+                        if (isset($message['role']) && $message['role'] === 'user' && isset($message['content'])) {
+                            $prompt .= $message['content'] . "\n";
                         }
                     }
                     
-                    // Add a system message if not present
-                    if (!array_filter($formattedMessages, function($msg) { 
-                        return $msg['role'] === 'system'; 
-                    })) {
-                        array_unshift($formattedMessages, [
-                            'role' => 'system',
-                            'content' => 'You are a helpful assistant.'
-                        ]);
+                    // Add system message as context if present
+                    $systemMessage = '';
+                    foreach ($messages as $message) {
+                        if (isset($message['role']) && $message['role'] === 'system' && isset($message['content'])) {
+                            $systemMessage = $message['content'];
+                            break;
+                        }
+                    }
+                    
+                    if (!empty($systemMessage)) {
+                        $prompt = $systemMessage . "\n\n" . $prompt;
+                    }
+                    
+                    // If no prompt could be extracted
+                    if (empty($prompt)) {
+                        $prompt = "Please provide a helpful response.";
+                    }
+                    
+                    $formattedMessages = null; // No messages needed for instruct models
+                } else {
+                    // Format messages for the chat API
+                    $formattedMessages = [];
+                    $prompt = null; // No prompt needed for chat models
+                    
+                    if (empty($messages)) {
+                        $formattedMessages = [
+                            [
+                                'role' => 'system',
+                                'content' => 'You are a helpful assistant.'
+                            ],
+                            [
+                                'role' => 'user',
+                                'content' => 'Hello, this is a test message to verify API connectivity.'
+                            ]
+                        ];
+                        Log::info('No user message provided, using test prompt');
+                    } else {
+                        // Convert the input messages to OpenAI format
+                        foreach ($messages as $message) {
+                            if (is_array($message) && isset($message['role']) && isset($message['content'])) {
+                                $formattedMessages[] = [
+                                    'role' => $message['role'],
+                                    'content' => $message['content']
+                                ];
+                            }
+                        }
+                        
+                        // Add a system message if not present
+                        if (!array_filter($formattedMessages, function($msg) { 
+                            return $msg['role'] === 'system'; 
+                        })) {
+                            array_unshift($formattedMessages, [
+                                'role' => 'system',
+                                'content' => 'You are a helpful assistant.'
+                            ]);
+                        }
                     }
                 }
             }
             
-            // Use chat API with the new package version
-            $response = $openAi->chat([
-                'model' => $model,
-                'messages' => $formattedMessages,
-                'temperature' => $temperature,
-                'max_tokens' => $maxTokens
-            ]);
+            // Check if this is an instruct model
+            $isInstructModel = strpos($model, 'instruct') !== false;
+            
+            if ($isInstructModel) {
+                // Use completion API with instruct model
+                Log::info("Using completion API with instruct model: $model");
+                $response = $openAi->completion([
+                    'model' => $model,
+                    'prompt' => $prompt,
+                    'temperature' => $temperature,
+                    'max_tokens' => $maxTokens,
+                    'frequency_penalty' => 0,
+                    'presence_penalty' => 0
+                ]);
+            } else {
+                // Use chat API with chat model
+                Log::info("Using chat API with chat model: $model");
+                $response = $openAi->chat([
+                    'model' => $model,
+                    'messages' => $formattedMessages,
+                    'temperature' => $temperature,
+                    'max_tokens' => $maxTokens
+                ]);
+            }
             
             $decodedResponse = json_decode($response, true);
             
@@ -123,6 +175,20 @@ class OpenAITestController extends Controller
             if (isset($decodedResponse['error'])) {
                 $errorMessage = $decodedResponse['error']['message'] ?? 'Unknown error';
                 $errorType = $decodedResponse['error']['type'] ?? 'unknown_error';
+                
+                // Model mismatch error
+                if (strpos($errorMessage, 'This is not a chat model') !== false) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'OpenAI API error: ' . $errorMessage,
+                        'error_type' => $errorType,
+                        'steps_to_fix' => [
+                            'Use "gpt-3.5-turbo" for chat API calls',
+                            'Or use "gpt-3.5-turbo-instruct" with the completions API endpoint'
+                        ],
+                        'response' => $decodedResponse
+                    ], 400);
+                }
                 
                 // Handle quota exceeded errors
                 if (strpos($errorMessage, 'exceeded your current quota') !== false) {
@@ -165,12 +231,20 @@ class OpenAITestController extends Controller
             
             // Format the successful response
             if (isset($decodedResponse['choices']) && count($decodedResponse['choices']) > 0) {
+                // Extract text based on model type
+                $responseText = '';
+                if ($isInstructModel) {
+                    $responseText = $decodedResponse['choices'][0]['text'] ?? '';
+                } else {
+                    $responseText = $decodedResponse['choices'][0]['message']['content'] ?? '';
+                }
+                
                 // For GET requests, simplify the response format
                 if ($isGetRequest) {
                     return response()->json([
                         'success' => true,
                         'message' => 'OpenAI API is working properly',
-                        'content' => $decodedResponse['choices'][0]['message']['content'] ?? '',
+                        'content' => $responseText,
                         'model' => $decodedResponse['model'] ?? 'unknown'
                     ]);
                 }
@@ -178,7 +252,8 @@ class OpenAITestController extends Controller
                 // For POST requests, return the full response data
                 return response()->json([
                     'success' => true,
-                    'response' => $decodedResponse
+                    'response' => $decodedResponse,
+                    'model_type' => $isInstructModel ? 'instruct' : 'chat'
                 ]);
             } else {
                 return response()->json([
