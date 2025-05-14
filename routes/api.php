@@ -387,6 +387,10 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
             Route::delete('orders/{id}/delete-repeat',			[User\OrderController::class, 'repeatOrderDelete']);
             Route::apiResource('orders',              User\OrderController::class)->except('index');
 
+            // Trip routes for live tracking
+            Route::get('trips/{id}',                            [User\TripController::class, 'show']);
+            Route::get('orders/{id}/trip',                      [User\TripController::class, 'getOrderTrip']);
+            
             Route::apiResource('parcel-orders',        User\ParcelOrderController::class);
             Route::post('parcel-orders/{id}/status/change',      [User\ParcelOrderController::class, 'orderStatusChange']);
             Route::post('parcel-orders/deliveryman-review/{id}', [User\ParcelOrderController::class, 'addDeliverymanReview']);
