@@ -461,7 +461,7 @@ class VoiceOrderController extends Controller
             // Try to make a simple API call using the completion endpoint
             // This is more likely to work with older versions of the package
             $response = $openAi->completion([
-                'model' => 'text-davinci-003',
+                'model' => 'gpt-3.5-turbo-instruct',
                 'prompt' => 'Say hello in one word',
                 'temperature' => 0.7,
                 'max_tokens' => 10,

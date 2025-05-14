@@ -49,7 +49,7 @@ EOT;
         $fullPrompt = $systemInstruction . "\n\n" . $prompt;
         
         $response = $this->openAi->completion([
-            'model' => 'text-davinci-003',
+            'model' => 'gpt-3.5-turbo-instruct',
             'prompt' => $fullPrompt,
             'temperature' => 0.3,
             'max_tokens' => 500,
@@ -168,7 +168,7 @@ EOT;
         $prompt = "You are a helpful food recommendation assistant. Generate a personalized food recommendation based on these preferences: " . json_encode($orderData);
         
         $response = $this->openAi->completion([
-            'model' => 'text-davinci-003',
+            'model' => 'gpt-3.5-turbo-instruct',
             'prompt' => $prompt,
             'temperature' => 0.7,
             'max_tokens' => 150,

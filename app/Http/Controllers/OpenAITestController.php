@@ -34,7 +34,7 @@ class OpenAITestController extends Controller
             $openAi = new OpenAi($apiKey);
             
             $messages = $request->input('messages', []);
-            $model = $request->input('model', 'text-davinci-003');
+            $model = $request->input('model', 'gpt-3.5-turbo-instruct');
             $temperature = $request->input('temperature', 0.7);
             $maxTokens = $request->input('max_tokens', 150);
             
