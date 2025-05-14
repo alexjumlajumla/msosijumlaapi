@@ -283,4 +283,46 @@ class VoiceOrderController extends Controller
             ];
         }
     }
+    
+    /**
+     * Process audio for real-time transcription
+     * This is a lighter version of the full voice order processing
+     * that only returns the transcription without AI analysis
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function realtimeTranscription(Request $request)
+    {
+        try {
+            $audioFile = $request->file('audio');
+            $language = $request->input('language', 'en-US');
+            
+            if (!$audioFile) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No audio file provided'
+                ], 400);
+            }
+            
+            // Just transcribe the audio without further processing
+            $result = $this->transcribeAudio($audioFile, $language);
+            
+            return response()->json([
+                'success' => true,
+                'text' => $result['text'] ?? '',
+                'language' => $language
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Real-time transcription failed: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Transcription failed: ' . $e->getMessage(),
+                'text' => ''
+            ], 500);
+        }
+    }
 } 
