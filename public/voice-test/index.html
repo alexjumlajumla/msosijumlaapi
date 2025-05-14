@@ -263,9 +263,9 @@
                 formData.append('audio', audioBlob);
                 formData.append('language', languageSelect.value);
                 
-                console.log('Sending request to voice-test endpoint...');
-                // Try with the explicit path
-                const response = await fetch('/voice-test', {
+                console.log('Sending request to voice-test API endpoint...');
+                // Use the new API endpoint path to avoid conflict with frontend routes
+                const response = await fetch('/api/voice-test-api', {
                     method: 'POST',
                     body: formData,
                     headers: {

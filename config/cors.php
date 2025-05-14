@@ -21,6 +21,7 @@ return [
         'test-google-credentials', 
         'test-openai',
         'voice-test',  // Added explicit path for voice testing
+        'api/voice-test-api',  // Added new API endpoint
     ],
 
     'allowed_methods' => ['*'],

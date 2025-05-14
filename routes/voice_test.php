@@ -4,7 +4,7 @@ use App\Http\Controllers\VoiceOrderController;
 use Illuminate\Support\Facades\Route;
 
 // Standalone voice-test endpoint for frontend testing
-Route::post('/voice-test', function() {
+Route::post('/api/voice-test-api', function() {
     try {
         $request = request();
         $audioFile = $request->file('audio');
