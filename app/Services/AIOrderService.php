@@ -44,7 +44,7 @@ Return a JSON object with the following structure:
 Focus on identifying specific food preferences and requirements. Infer reasonable values if some fields are uncertain.
 EOT;
 
-        $response = $this->openAi->chatCompletion([
+        $response = $this->openAi->chat([
             'model' => 'gpt-4o',
             'messages' => [
                 [
@@ -157,7 +157,7 @@ EOT;
     {
         $prompt = "Generate a personalized food recommendation based on these preferences: " . json_encode($orderData);
         
-        $response = $this->openAi->chatCompletion([
+        $response = $this->openAi->chat([
             'model' => 'gpt-3.5-turbo',
             'messages' => [
                 [
