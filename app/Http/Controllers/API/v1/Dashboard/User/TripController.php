@@ -76,17 +76,75 @@ class TripController extends UserBaseController
                 ]);
             }
 
-            // Get the first trip for this order
-            $trip = $order->trips()->with(['driver', 'vehicle', 'locations'])->first();
-            
-            if (!$trip) {
+            // Check if trip should be visible for this order status
+            if (!$order->isTripVisible()) {
                 return $this->onErrorResponse([
                     'code'    => ResponseError::ERROR_404,
                     'message' => __('errors.' . ResponseError::ORDER_TRIP_NOT_FOUND, locale: $this->language)
                 ]);
             }
+
+            // Get the first trip for this order
+            $trip = $order->trips()->with(['driver', 'vehicle', 'locations'])->first();
             
-            // If there are no locations, create a default one
+            if (!$trip) {
+                // Try to create a new trip for this order
+                if ($order->status === Order::STATUS_ON_A_WAY || $order->status === Order::STATUS_SHIPPED) {
+                    // Format address as a string if it's an array
+                    $addressString = 'Unknown';
+                    if (isset($order->address)) {
+                        if (is_array($order->address)) {
+                            $addressString = implode(', ', array_filter([
+                                $order->address['address'] ?? '',
+                                $order->address['house'] ?? '',
+                                $order->address['street'] ?? '',
+                                $order->address['city'] ?? '',
+                            ]));
+                            
+                            if (empty(trim($addressString))) {
+                                $addressString = 'Address from Order #' . $order->id;
+                            }
+                        } else {
+                            $addressString = (string)$order->address;
+                        }
+                    }
+
+                    // Create a new Trip for the order
+                    $trip = Trip::create([
+                        'name' => 'Trip for Order #' . $order->id,
+                        'start_address' => $addressString,
+                        'start_lat' => is_array($order->location) ? 
+                                    ($order->location['lat'] ?? $order->location['latitude'] ?? 0) : 0,
+                        'start_lng' => is_array($order->location) ? 
+                                    ($order->location['lng'] ?? $order->location['longitude'] ?? 0) : 0,
+                        'scheduled_at' => now(),
+                        'status' => $order->status === Order::STATUS_DELIVERED ? 'completed' : 'in_progress',
+                    ]);
+
+                    // Associate the order with the trip
+                    $order->trips()->attach($trip->id, [
+                        'sequence' => 1, 
+                        'status' => $order->status === Order::STATUS_DELIVERED ? 'delivered' : 'pending'
+                    ]);
+                    
+                    // Reload the trip with relationships
+                    $trip->load(['driver', 'vehicle', 'locations']);
+                } else {
+                    return $this->onErrorResponse([
+                        'code'    => ResponseError::ERROR_404,
+                        'message' => __('errors.' . ResponseError::ORDER_TRIP_NOT_FOUND, locale: $this->language)
+                    ]);
+                }
+            }
+
+            // If trip exists but order is delivered, update trip status to completed
+            if ($trip && $order->status === Order::STATUS_DELIVERED && $trip->status !== 'completed') {
+                $trip->update(['status' => 'completed']);
+                $order->trips()->updateExistingPivot($trip->id, ['status' => 'delivered']);
+                $trip->refresh();
+            }
+            
+            // If there are no locations, create a default one using shop location
             if ($trip->locations->isEmpty() && $order->shop) {
                 $shop = $order->shop;
                 $trip->locations()->create([
@@ -95,7 +153,7 @@ class TripController extends UserBaseController
                     'lng' => $shop->location['lng'] ?? ($shop->location['longitude'] ?? 0),
                     'sequence' => 0,
                     'eta_minutes' => 30,
-                    'status' => 'pending'
+                    'status' => $order->status === Order::STATUS_DELIVERED ? 'arrived' : 'pending'
                 ]);
                 
                 // Reload locations

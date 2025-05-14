@@ -534,6 +534,23 @@ class Order extends Model
 	}
 
 	/**
+	 * Check if trip should be visible for this order status
+	 * 
+	 * @return bool
+	 */
+	public function isTripVisible(): bool
+	{
+		// Show trip for all delivery orders with status ready, on_a_way, or delivered
+		return $this->delivery_type === 'delivery' && 
+			in_array($this->status, [
+				self::STATUS_READY,
+				self::STATUS_SHIPPED,
+				self::STATUS_ON_A_WAY,
+				self::STATUS_DELIVERED
+			]);
+	}
+
+	/**
 	 * @param $query
 	 * @param $filter
 	 * @return void
