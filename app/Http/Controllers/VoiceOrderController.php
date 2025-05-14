@@ -430,4 +430,78 @@ class VoiceOrderController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Test OpenAI API key validity
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function testOpenAIKey(Request $request)
+    {
+        $request->validate([
+            'api_key' => 'nullable|string',
+        ]);
+
+        try {
+            // Use provided key or fallback to configured key
+            $apiKey = $request->input('api_key') ?: config('services.openai.api_key');
+            
+            if (empty($apiKey)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No API key provided',
+                    'valid' => false
+                ]);
+            }
+
+            // Create a test instance of the OpenAI client
+            $openAi = new \Orhanerday\OpenAi\OpenAi($apiKey);
+            
+            // Try to make a simple API call
+            $response = $openAi->chat([
+                'model' => 'gpt-3.5-turbo',
+                'messages' => [
+                    [
+                        'role' => 'system',
+                        'content' => 'You are a helpful assistant.',
+                    ],
+                    [
+                        'role' => 'user',
+                        'content' => 'Test connection with a short response',
+                    ],
+                ],
+                'temperature' => 0.7,
+                'max_tokens' => 10,
+            ]);
+            
+            $decoded = json_decode($response, true);
+            
+            // Check if we have a successful response
+            if (isset($decoded['choices']) && is_array($decoded['choices']) && count($decoded['choices']) > 0) {
+                $model = $decoded['model'] ?? 'unknown';
+                return response()->json([
+                    'success' => true,
+                    'message' => 'API key is valid',
+                    'valid' => true,
+                    'model' => $model,
+                    'response_sample' => data_get($decoded, 'choices.0.message.content', '')
+                ]);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'API key validation failed: ' . ($decoded['error']['message'] ?? 'Unknown error'),
+                    'valid' => false,
+                    'response' => $decoded
+                ]);
+            }
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error testing OpenAI API key: ' . $e->getMessage(),
+                'valid' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 } 

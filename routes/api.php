@@ -50,6 +50,7 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
     Route::post('/voice-order/repeat', [VoiceOrderController::class, 'repeatOrder']);
     Route::post('/voice-order/feedback', [VoiceOrderController::class, 'processFeedback']);
     Route::get('/voice-order/history', [VoiceOrderController::class, 'getOrderHistory']);
+    Route::post('/test-openai-key', [VoiceOrderController::class, 'testOpenAIKey']);
 
     // OpenAI Testing
     Route::post('/openai-chat', [OpenAITestController::class, 'testChatCompletion']);
@@ -106,6 +107,7 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
         Route::post('voice-order/repeat', [VoiceOrderController::class, 'repeatOrder']);
         Route::post('voice-order/feedback', [VoiceOrderController::class, 'processFeedback']);
         Route::get('voice-order/history', [VoiceOrderController::class, 'getOrderHistory']);
+        Route::post('test-openai-key', [VoiceOrderController::class, 'testOpenAIKey']);
         Route::post('openai-chat', [OpenAITestController::class, 'testChatCompletion']);
 
         /* Languages */
