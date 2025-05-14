@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Voice Processing Test</title>
+    <!-- Meta tag to prevent caching -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <style>
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -165,7 +169,7 @@
             <p>Processing voice recording...</p>
         </div>
         
-        <div id="resultContainer" style="display: none;">
+                    <div id="resultContainer" style="display: none;">
             <div class="result">
                 <h3>Transcription <span id="transcriptionStatus" class="badge"></span></h3>
                 <p id="transcriptionResult"></p>
@@ -175,6 +179,27 @@
                 <h3>OpenAI Analysis <span id="openaiStatus" class="badge"></span></h3>
                 <pre id="openaiResult"></pre>
             </div>
+        </div>
+        
+        <!-- Direct API test section -->
+        <div class="result" style="margin-top: 30px;">
+            <h3>Direct API Test</h3>
+            <p>Test the API endpoint directly with this form:</p>
+            <form id="directApiForm" enctype="multipart/form-data" method="post" action="/api/voice-test-api">
+                <div style="margin-bottom: 15px;">
+                    <label for="directAudioFile">Select audio file: </label>
+                    <input type="file" id="directAudioFile" name="audio" accept="audio/*">
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <label for="directLanguage">Language: </label>
+                    <select id="directLanguage" name="language">
+                        <option value="en-US">English (US)</option>
+                        <option value="es-ES">Spanish</option>
+                        <option value="fr-FR">French</option>
+                    </select>
+                </div>
+                <button type="submit" class="primary" style="cursor: pointer; padding: 8px 16px; background-color: #2563eb; color: white; border: none; border-radius: 4px;">Submit Direct Test</button>
+            </form>
         </div>
     </div>
 
@@ -191,6 +216,7 @@
         const transcriptionStatus = document.getElementById('transcriptionStatus');
         const openaiStatus = document.getElementById('openaiStatus');
         const languageSelect = document.getElementById('language');
+        const directApiForm = document.getElementById('directApiForm');
         
         // MediaRecorder variables
         let mediaRecorder;
@@ -266,11 +292,13 @@
                 console.log('Sending request to voice-test API endpoint...');
                 // Use the new API endpoint path to avoid conflict with frontend routes
                 const response = await fetch('/api/voice-test-api', {
-                    method: 'POST',
+                    method: 'POST',  // Make sure this is POST
                     body: formData,
                     headers: {
-                        'Accept': 'application/json'
-                    }
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'  // Add this to help identify AJAX requests
+                    },
+                    credentials: 'same-origin'  // Include cookies if needed
                 });
                 
                 console.log('Response status:', response.status);
@@ -329,6 +357,53 @@
                 openaiResult.textContent = error.message;
             }
         });
+        
+        // Handle direct API form submission
+        if (directApiForm) {
+            directApiForm.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                
+                const formData = new FormData(directApiForm);
+                
+                try {
+                    console.log('Submitting direct API test form...');
+                    const response = await fetch('/api/voice-test-api', {
+                        method: 'POST',
+                        body: formData,
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        },
+                        credentials: 'same-origin'
+                    });
+                    
+                    console.log('Response status:', response.status);
+                    
+                    // Check content type
+                    const contentType = response.headers.get('content-type');
+                    if (contentType && contentType.includes('text/html')) {
+                        const htmlContent = await response.text();
+                        console.error('Received HTML instead of JSON:', htmlContent);
+                        alert('Server returned HTML instead of JSON. Check console for details.');
+                        return;
+                    }
+                    
+                    const data = await response.json();
+                    
+                    // Show the result
+                    if (data.success) {
+                        alert(`API test successful! Transcription: "${data.transcription}"`);
+                    } else {
+                        alert(`API test failed: ${data.message}`);
+                    }
+                    
+                    console.log('Full API response:', data);
+                } catch (error) {
+                    console.error('Direct API test error:', error);
+                    alert(`Error testing API: ${error.message}`);
+                }
+            });
+        }
     </script>
 </body>
-</html> 
+</html>

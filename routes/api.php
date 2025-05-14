@@ -1826,7 +1826,7 @@ Route::get('/test-openai', function() {
 });
 
 // Direct voice test endpoint (outside of any group)
-Route::post('/voice-test', function() {
+Route::post('/api/voice-test-api', function() {
     try {
         $request = request();
         $audioFile = $request->file('audio');
