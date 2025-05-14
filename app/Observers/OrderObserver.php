@@ -55,32 +55,74 @@ class OrderObserver
                 }
             }
 
-            // Create a new Trip for the order
+            // Get customer coordinates or use defaults
+            $customerLat = is_array($order->location) ? 
+                ($order->location['lat'] ?? $order->location['latitude'] ?? 0) : 0;
+            $customerLng = is_array($order->location) ? 
+                ($order->location['lng'] ?? $order->location['longitude'] ?? 0) : 0;
+
+            // Create a new Trip for the order, always set status to planned initially
             $trip = Trip::create([
                 'name' => 'Trip for Order #' . $order->id,
                 'start_address' => $addressString,
-                'start_lat' => is_array($order->location) ? 
-                               ($order->location['lat'] ?? $order->location['latitude'] ?? 0) : 0,
-                'start_lng' => is_array($order->location) ? 
-                               ($order->location['lng'] ?? $order->location['longitude'] ?? 0) : 0,
+                'start_lat' => $customerLat,
+                'start_lng' => $customerLng,
                 'scheduled_at' => now(),
                 'status' => 'planned',
+                'meta' => [
+                    'created_for_order_id' => $order->id,
+                    'estimated_travel_time' => 30,  // Default 30 minutes
+                    'estimate_method' => 'default'
+                ]
             ]);
 
             // Associate the order with the trip
-            $order->trip()->attach($trip->id, ['sequence' => 1, 'status' => 'pending']);
+            $order->trips()->attach($trip->id, ['sequence' => 1, 'status' => 'pending']);
             
-            // Add a demo delivery location for the trip - this is the key change to fix the empty map
+            // Add shop location as a destination for the trip
             if ($trip && $order->shop) {
                 $shop = $order->shop;
+                
+                // Get shop coordinates
+                $shopLat = is_array($shop->location) ? 
+                    ($shop->location['lat'] ?? ($shop->location['latitude'] ?? 0)) : 0;
+                $shopLng = is_array($shop->location) ? 
+                    ($shop->location['lng'] ?? ($shop->location['longitude'] ?? 0)) : 0;
+                
+                // Add the trip location
                 $trip->locations()->create([
                     'address' => $shop->address ?? 'Delivery destination', 
-                    'lat' => $shop->location['lat'] ?? ($shop->location['latitude'] ?? 0),
-                    'lng' => $shop->location['lng'] ?? ($shop->location['longitude'] ?? 0),
+                    'lat' => $shopLat,
+                    'lng' => $shopLng,
                     'sequence' => 0,
                     'eta_minutes' => 30,
                     'status' => 'pending'
                 ]);
+                
+                // Calculate distance-based ETA if we have valid coordinates
+                if ($customerLat && $customerLng && $shopLat && $shopLng) {
+                    // Use Haversine formula to calculate distance in kilometers
+                    $earthRadius = 6371; // km
+                    $dLat = deg2rad($shopLat - $customerLat);
+                    $dLng = deg2rad($shopLng - $customerLng);
+                    $a = sin($dLat/2) * sin($dLat/2) + cos(deg2rad($customerLat)) * cos(deg2rad($shopLat)) * sin($dLng/2) * sin($dLng/2);
+                    $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+                    $distance = $earthRadius * $c;
+                    
+                    // Rough estimate: 20 km/h speed in city traffic = 1 km takes 3 minutes
+                    $eta = round(max(15, $distance * 3)); // Minimum 15 minutes
+                    
+                    // Update trip and location with calculated ETA
+                    $trip->locations()->update(['eta_minutes' => $eta]);
+                    $trip->update([
+                        'meta' => [
+                            'created_for_order_id' => $order->id,
+                            'estimated_travel_time' => $eta,
+                            'distance_km' => round($distance, 2),
+                            'estimate_method' => 'distance_based'
+                        ]
+                    ]);
+                }
             }
         } catch (Throwable $e) {
             // Log the error but don't stop order creation
