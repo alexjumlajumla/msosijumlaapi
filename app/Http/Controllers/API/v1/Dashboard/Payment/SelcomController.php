@@ -349,9 +349,12 @@ public function checkTransactionStatusofParcelAndDelete(int $parcelId, $transid 
     $selcomStatus = null;
 
     try {
+        // First check if parcel exists to avoid 404 errors
+        $parcel = ParcelOrder::find($parcelId);
+        $parcelExists = $parcel !== null;
+        
         // Check if transaction exists (if transid is provided)
         $order = $transid ? SelcomPayment::where('transid', $transid)->first() : null;
-        $parcelExists = ParcelOrder::where('id', $parcelId)->exists();
 
         // If neither the transaction nor parcel exist, return a 404
         if (!$order && !$parcelExists) {
@@ -363,7 +366,7 @@ public function checkTransactionStatusofParcelAndDelete(int $parcelId, $transid 
 
         // If no transaction exists but parcel does, delete the parcel
         if (!$order && $parcelExists) {
-            ParcelOrder::where('id', $parcelId)->delete();
+            $parcel->delete();
             return response()->json([
                 'success' => false,
                 'message' => 'Transaction not found. Parcel has been deleted.',
@@ -387,7 +390,6 @@ public function checkTransactionStatusofParcelAndDelete(int $parcelId, $transid 
                 $isCompleted = true;
                 $order->update(['payment_status' => 'COMPLETED']);
 
-                $parcel = ParcelOrder::find($parcelId);
                 if ($parcel) {
                     $tokens = $this->tokens($parcel->user_id);
                     $this->sendNotification(
@@ -398,15 +400,16 @@ public function checkTransactionStatusofParcelAndDelete(int $parcelId, $transid 
                         data_get($tokens, 'ids', [])
                     );
                 }
-            } else {
-                // If transaction not completed, delete the parcel
-                ParcelOrder::where('id', $parcelId)->delete();
+            } else if ($parcelExists) {
+                // If transaction not completed and parcel exists, delete the parcel
+                $parcel->delete();
             }
         }
 
     } catch (\Throwable $e) {
-        \Log::error("Selcom order status check failed for $transid", [
+        \Log::error("Selcom order status check failed for parcel $parcelId, transaction $transid", [
             'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
         ]);
         return response()->json([
             'success' => false,
