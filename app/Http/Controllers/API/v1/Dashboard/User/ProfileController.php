@@ -148,6 +148,15 @@ info('this->userService->create($request->validated())',$result);
         try {
             $user = auth()->user();
             
+            // Check if user exists
+            if (!$user) {
+                \Log::error('[FirebaseToken] Update failed: No authenticated user found');
+                return response()->json([
+                    'status' => false,
+                    'message' => 'User authentication required'
+                ], 401);
+            }
+            
             // Enhanced token validation
             $token = $request->input('firebase_token');
 
@@ -165,7 +174,7 @@ info('this->userService->create($request->validated())',$result);
                     'status' => false,
                     'message' => 'Token cannot be empty'
                 ], 400);
-        }
+            }
 
             // Strict FCM token format validation
             // FCM tokens typically follow this pattern:
@@ -202,7 +211,7 @@ info('this->userService->create($request->validated())',$result);
             }
 
             // Update token
-        $user->update([
+            $user->update([
                 'firebase_token' => $token
             ]);
 
@@ -210,16 +219,27 @@ info('this->userService->create($request->validated())',$result);
                 'user_id' => $user->id,
                 'token_prefix' => substr($token, 0, 15) . '...',
                 'token_length' => strlen($token)
-        ]);
+            ]);
 
             return response()->json([
                 'status' => true,
                 'message' => 'Token updated successfully'
             ]);
         } catch (\Exception $e) {
+            // Get user ID safely
+            $userId = auth()->id() ?? 'unknown';
+            
+            // Get token prefix safely
+            $tokenPrefix = '';
+            $inputToken = $request->input('firebase_token');
+            if (!empty($inputToken) && (is_string($inputToken) || is_array($inputToken))) {
+                $tokenString = is_array($inputToken) ? json_encode($inputToken) : $inputToken;
+                $tokenPrefix = substr((string)$tokenString, 0, 15) . '...';
+            }
+            
             \Log::error('[FirebaseToken] Update failed: ' . $e->getMessage(), [
-                'user_id' => auth()->id(),
-                'token_prefix' => substr($request->input('firebase_token'), 0, 15) . '...',
+                'user_id' => $userId,
+                'token_prefix' => $tokenPrefix,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);

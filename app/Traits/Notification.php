@@ -91,12 +91,43 @@ trait Notification
 	): void
 	{
 		dispatch(function () use ($receivers, $data, $userIds) {
-			if (empty($receivers)) {
-				\Log::error('[PushService] No receivers provided for notification');
-				return;
+			// Clean and validate receivers first
+			$cleanReceivers = $this->normalizeTokens($receivers);
+			
+			if (empty($cleanReceivers)) {
+				// Check if we have userIds that might have tokens
+				if (!empty($userIds)) {
+					\Log::warning('[PushService] No direct receivers provided, but we have user IDs. Attempting to find tokens from users.');
+					
+					try {
+						$userTokens = \App\Models\User::whereIn('id', $userIds)
+							->whereNotNull('firebase_token')
+							->where('firebase_token', '!=', '')
+							->where('firebase_token', '!=', '[]')
+							->where('firebase_token', '!=', 'null')
+							->pluck('firebase_token')
+							->toArray();
+							
+						if (!empty($userTokens)) {
+							$cleanReceivers = $this->normalizeTokens($userTokens);
+							\Log::info('[PushService] Found ' . count($cleanReceivers) . ' tokens from user IDs');
+						}
+					} catch (\Exception $e) {
+						\Log::error('[PushService] Error finding tokens from user IDs: ' . $e->getMessage());
+					}
+				}
+				
+				// If we still don't have tokens, log and return
+				if (empty($cleanReceivers)) {
+					\Log::error('[PushService] No receivers provided for notification', [
+						'user_ids' => $userIds,
+						'data' => $data
+					]);
+					return;
+				}
 			}
 
-			\Log::info('[PushService] Preparing notification for ' . count($receivers) . ' receivers', [
+			\Log::info('[PushService] Preparing notification for ' . count($cleanReceivers) . ' receivers', [
 				'title'   => is_array($data) ? $data['title'] ?? '' : '',
 				'body'    => is_array($data) ? $data['body']  ?? '' : $data,
 				'userIds' => $userIds
@@ -131,50 +162,8 @@ trait Notification
 				return;
 			}
 
-			// Ensure tokens are individual strings
-			$processedReceivers = [];
-			foreach ($receivers as $receiver) {
-				if (is_array($receiver)) {
-					// Nested arrays – flatten them
-					foreach ($receiver as $tokenItem) {
-						if (!empty($tokenItem) && is_string($tokenItem)) {
-							$processedReceivers[] = $tokenItem;
-						}
-					}
-					continue;
-				}
-
-				if (is_string($receiver) && !empty($receiver)) {
-					$trimmed = trim($receiver);
-
-					// If token looks like a JSON array (e.g. "[\"tok1\",\"tok2\"]") decode it
-					if (str_starts_with($trimmed, '[') && str_ends_with($trimmed, ']')) {
-						$decoded = json_decode($trimmed, true);
-						if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-							foreach ($decoded as $tok) {
-								if (!empty($tok) && is_string($tok)) {
-									$processedReceivers[] = $tok;
-								}
-							}
-							continue;
-						}
-					}
-
-					// If token contains comma-separated list, split it
-					if (str_contains($trimmed, ',')) {
-						foreach (explode(',', $trimmed) as $tok) {
-							$tok = trim($tok, " \"'[]");
-							if (!empty($tok)) {
-								$processedReceivers[] = $tok;
-							}
-						}
-						continue;
-					}
-
-					// Fallback – assume the string itself is a single token
-					$processedReceivers[] = $trimmed;
-				}
-			}
+			// Use the already cleaned and normalized receivers
+			$processedReceivers = $cleanReceivers;
 
 			if (empty($processedReceivers)) {
 				\Log::error('[PushService] No valid receivers after processing');

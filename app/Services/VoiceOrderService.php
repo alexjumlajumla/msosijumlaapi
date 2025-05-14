@@ -5,7 +5,7 @@ namespace App\Services;
 use Google\Cloud\Speech\V1\RecognitionConfig;
 use Google\Cloud\Speech\V1\RecognitionAudio;
 use Google\Cloud\Speech\V1\SpeechClient;
-use Google\Cloud\Speech\V1\SpeakingRate;
+use Google\Cloud\Speech\V1\SpeechContext;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 
@@ -50,6 +50,12 @@ class VoiceOrderService
             $audio = (new RecognitionAudio())
                 ->setContent($audioContent);
     
+            // Create speech context with proper SpeechContext object
+            $phrases = $this->getFoodRelatedPhrases();
+            $speechContext = new SpeechContext();
+            $speechContext->setPhrases($phrases);
+            $speechContext->setBoost(20.0);
+    
             // Configure the recognition settings
             $config = (new RecognitionConfig())
                 ->setEncoding(RecognitionConfig\AudioEncoding::LINEAR16)
@@ -59,12 +65,7 @@ class VoiceOrderService
                 ->setUseEnhanced(true) // Use enhanced model
                 ->setProfanityFilter(false) // Allow all words
                 ->setEnableAutomaticPunctuation(true)
-                ->setSpeechContexts([
-                    [
-                        'phrases' => $this->getFoodRelatedPhrases(),
-                        'boost' => 20.0
-                    ]
-                ]);
+                ->setSpeechContexts([$speechContext]);
     
             $response = $this->speechClient->recognize($config, $audio);
     

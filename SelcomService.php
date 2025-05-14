@@ -226,7 +226,11 @@ class SelcomService extends BaseService
 
             if (!$selcomPayment) {
                 Log::error('Selcom payment not found', ['transid' => $transID]);
-                return null;
+                return [
+                    'status' => false,
+                    'message' => 'Payment record not found',
+                    'data' => null
+                ];
             }
 
             // Validate order and user existence
@@ -235,7 +239,11 @@ class SelcomService extends BaseService
                     'transid' => $transID,
                     'order_id' => $selcomPayment->order_id
                 ]);
-                return null;
+                return [
+                    'status' => false,
+                    'message' => 'Order record not found',
+                    'data' => null
+                ];
             }
 
             // Ensure user exists before proceeding
@@ -244,50 +252,98 @@ class SelcomService extends BaseService
                     'transid' => $transID,
                     'order_id' => $selcomPayment->order_id
                 ]);
-                return null;
+                return [
+                    'status' => false,
+                    'message' => 'User not found for order',
+                    'data' => null
+                ];
             }
 
-            $payment = Payment::where('tag', Payment::TAG_SELCOM)->first();
-            $paymentPayload = PaymentPayload::where('payment_id', $payment?->id)->first();
-            $payload = $paymentPayload?->payload;
-
-            $api = new Selcom($payload);
-            $response = $api->orderStatus($selcomPayment->order_id);
-
-            if (!$this->isSuccessfulPayment($response)) {
-                return null;
-            }
-
-            DB::beginTransaction();
+            // Now we can safely proceed with getting references
             try {
-                $selcomPayment->update(['payment_status' => 'COMPLETED']);
-                $success = $this->updateOrderStatus($selcomPayment->order_id);
+                $payment = Payment::where('tag', Payment::TAG_SELCOM)->first();
+                $paymentPayload = PaymentPayload::where('payment_id', $payment?->id)->first();
+                $payload = $paymentPayload?->payload ?? [];
                 
-                if ($success) {
-                    DB::commit();
+                // Process the payment result
+                $api = new Selcom($payload);
+                $result = $api->checkoutStatus($transID);
+                
+                // Log the detailed response for debugging
+                Log::info('Selcom payment status result', ['response' => $result]);
+                
+                if ($this->isSuccessfulPayment($result)) {
+                    // Payment was successful, update the order
+                    $this->updateOrderStatus($selcomPayment->order_id);
+                    
+                    // Send email notification if needed
+                    $order = Order::find($selcomPayment->order_id);
+                    if ($order && $this->shouldSendEmail($order)) {
+                        $this->sendOrderEmail($order);
+                    }
+                    
                     return [
-                        'status' => data_get($response['data'][0], 'payment_status'),
-                        'token'  => data_get($response['data'][0], 'transid')
+                        'status' => true,
+                        'message' => 'Payment successful',
+                        'data' => $result
+                    ];
+                } else {
+                    // Payment failed
+                    Log::error('Selcom payment failed', [
+                        'transid' => $transID,
+                        'order_id' => $selcomPayment->order_id,
+                        'result' => $result
+                    ]);
+                    
+                    // Mark the order as payment failed
+                    $order = Order::find($selcomPayment->order_id);
+                    if ($order) {
+                        $order->update(['status' => 'payment_failed']);
+                        
+                        // Send notification to customer
+                        if ($order->user && $order->user->firebase_token) {
+                            try {
+                                event(new \App\Events\PaymentFailedEvent($order));
+                            } catch (\Exception $e) {
+                                Log::error('Failed to send payment failed notification', [
+                                    'order_id' => $order->id,
+                                    'error' => $e->getMessage()
+                                ]);
+                            }
+                        }
+                    }
+                    
+                    return [
+                        'status' => false,
+                        'message' => 'Payment failed',
+                        'data' => $result
                     ];
                 }
-
-                DB::rollBack();
-                return null;
-
             } catch (\Exception $e) {
-                DB::rollBack();
-                Log::error('Transaction processing failed', [
+                Log::error('Selcom payment processing error', [
                     'transid' => $transID,
-                    'error' => $e->getMessage()
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString()
                 ]);
-                return null;
+                
+                return [
+                    'status' => false,
+                    'message' => 'Error processing payment: ' . $e->getMessage(),
+                    'data' => null
+                ];
             }
         } catch (\Exception $e) {
-            Log::error('Payment verification failed', [
+            Log::error('Selcom transaction error', [
                 'transid' => $transID,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
-            return null;
+            
+            return [
+                'status' => false,
+                'message' => 'Error processing transaction: ' . $e->getMessage(),
+                'data' => null
+            ];
         }
     }
 

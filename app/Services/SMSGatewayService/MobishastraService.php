@@ -26,7 +26,7 @@ class MobishastraService extends CoreService
             return ['status' => false, 'message' => 'Default SMS payload not found'];
         }
         
-        return $this->sendMessage($phone, $message, $smsPayload);
+        return $this->processSmsSending($phone, $message, $smsPayload);
     }
 
     /**
@@ -46,10 +46,13 @@ class MobishastraService extends CoreService
             return ['status' => false, 'message' => 'Default SMS payload not found'];
         }
         
-        return $this->sendMessage($phone, $message, $smsPayload);
+        return $this->processSmsSending($phone, $message, $smsPayload);
     }
 
-    private function sendMessage($phone, $message, SmsPayload $smsPayload): array
+    /**
+     * Process the actual SMS sending
+     */
+    public function processSmsSending($phone, $message, $smsPayload = null)
     {
         try {
             $accountId  = data_get($smsPayload->payload, 'mobishastra_user');
@@ -67,7 +70,16 @@ class MobishastraService extends CoreService
                       "&msgtext=" . urlencode($message) . 
                       "&priority=High&CountryCode=ALL";
             
-            \Log::info('SMS Request', ['request' => $request, 'message' => $message]);
+            // Log sanitized request that masks sensitive data
+            $safeRequest = "?user=" . substr($accountId, 0, 2) . "***" . 
+                      "&pwd=********" . 
+                      "&senderid=" . $senderID . 
+                      "&mobileno=" . substr($phone, 0, 5) . "****" . 
+                      "&msgtext=" . urlencode($message) . 
+                      "&priority=High&CountryCode=ALL";
+                      
+            \Log::info('SMS Request', ['request' => $safeRequest, 'message' => $message]);
+            
             $response = $this->send_get_request($request);
             \Log::info('SMS Response', [$response]);
 
@@ -83,7 +95,9 @@ class MobishastraService extends CoreService
         $api_endpoint = "https://mshastra.com/sendurlcomma.aspx";       
         $url = $api_endpoint . $request;
 
-        \Log::info('SMS API', [$url]);
+        // Use LogSanitizer to mask sensitive data in URL before logging
+        $safeUrl = \App\Services\LogSanitizer::sanitize($api_endpoint . preg_replace('/&pwd=[^&]+/', '&pwd=********', $request));
+        \Log::info('SMS API', [$safeUrl]);
 
         $ch = curl_init($url);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
