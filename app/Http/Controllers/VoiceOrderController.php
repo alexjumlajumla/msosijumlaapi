@@ -251,10 +251,36 @@ class VoiceOrderController extends Controller
             return;
         }
         
-        $credits = $user->ai_order_credits ?? 3;
-        if ($credits > 0) {
-            $user->ai_order_credits = $credits - 1;
-            $user->save();
+        // Ensure credits don't go below zero
+        if ($user->ai_order_credits > 0) {
+            $user->decrement('ai_order_credits');
+        }
+    }
+    
+    /**
+     * Public method to access audio transcription for testing
+     * 
+     * @param \Illuminate\Http\UploadedFile $audioFile
+     * @param string $language Language code, default en-US
+     * @return array Transcription result with text and confidence
+     */
+    public function transcribeAudio($audioFile, string $language = 'en-US'): array
+    {
+        try {
+            $filePath = $audioFile->getPathname();
+            $text = $this->voiceOrderService->transcribeAudio($filePath, $language);
+            
+            return [
+                'success' => true, 
+                'text' => $text,
+                'language' => $language
+            ];
+        } catch (\Exception $e) {
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+                'text' => ''
+            ];
         }
     }
 } 

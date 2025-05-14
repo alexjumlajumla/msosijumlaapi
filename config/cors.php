@@ -15,7 +15,13 @@ return [
     |
     */
 
-    'paths' => ['api/*', 'sanctum/csrf-cookie', 'test-google-credentials'],
+    'paths' => [
+        'api/*', 
+        'sanctum/csrf-cookie', 
+        'test-google-credentials', 
+        'test-openai',
+        'voice-test',  // Added explicit path for voice testing
+    ],
 
     'allowed_methods' => ['*'],
 
