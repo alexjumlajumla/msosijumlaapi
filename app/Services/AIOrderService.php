@@ -44,26 +44,36 @@ Return a JSON object with the following structure:
 Focus on identifying specific food preferences and requirements. Infer reasonable values if some fields are uncertain.
 EOT;
 
-        $response = $this->openAi->chat([
-            'model' => 'gpt-4o',
-            'messages' => [
-                [
-                    'role' => 'system',
-                    'content' => 'You are a food ordering assistant that specializes in understanding customer preferences and dietary requirements. Extract structured information from voice transcripts.',
-                ],
-                [
-                    'role' => 'user',
-                    'content' => $prompt,
-                ],
-            ],
+        // Use completion API instead of chat API for older versions of the package
+        $systemInstruction = "You are a food ordering assistant that specializes in understanding customer preferences and dietary requirements. Extract structured information from voice transcripts.";
+        $fullPrompt = $systemInstruction . "\n\n" . $prompt;
+        
+        $response = $this->openAi->completion([
+            'model' => 'text-davinci-003',
+            'prompt' => $fullPrompt,
             'temperature' => 0.3,
-            'max_tokens' => 250,
+            'max_tokens' => 500,
+            'frequency_penalty' => 0,
+            'presence_penalty' => 0
         ]);
 
         $decoded = json_decode($response, true);
-        $content = data_get($decoded, 'choices.0.message.content');
+        $content = $decoded['choices'][0]['text'] ?? '';
 
-        $orderData = json_decode($content, true) ?? [];
+        // Try to extract JSON from the response
+        try {
+            $jsonStart = strpos($content, '{');
+            $jsonEnd = strrpos($content, '}');
+            if ($jsonStart !== false && $jsonEnd !== false) {
+                $jsonContent = substr($content, $jsonStart, $jsonEnd - $jsonStart + 1);
+                $orderData = json_decode($jsonContent, true) ?? [];
+            } else {
+                $orderData = json_decode($content, true) ?? [];
+            }
+        } catch (\Exception $e) {
+            \Log::error('Error parsing JSON from OpenAI response: ' . $e->getMessage());
+            $orderData = [];
+        }
         
         // Add additional processing to handle ambiguities and alternatives
         $orderData = $this->enhanceOrderData($orderData, $transcription);
@@ -155,25 +165,18 @@ EOT;
      */
     public function generateRecommendation(array $orderData): string
     {
-        $prompt = "Generate a personalized food recommendation based on these preferences: " . json_encode($orderData);
+        $prompt = "You are a helpful food recommendation assistant. Generate a personalized food recommendation based on these preferences: " . json_encode($orderData);
         
-        $response = $this->openAi->chat([
-            'model' => 'gpt-3.5-turbo',
-            'messages' => [
-                [
-                    'role' => 'system',
-                    'content' => 'You are a helpful food recommendation assistant that provides short, useful suggestions.',
-                ],
-                [
-                    'role' => 'user',
-                    'content' => $prompt,
-                ],
-            ],
+        $response = $this->openAi->completion([
+            'model' => 'text-davinci-003',
+            'prompt' => $prompt,
             'temperature' => 0.7,
             'max_tokens' => 150,
+            'frequency_penalty' => 0,
+            'presence_penalty' => 0
         ]);
         
         $decoded = json_decode($response, true);
-        return data_get($decoded, 'choices.0.message.content', 'No recommendation available');
+        return $decoded['choices'][0]['text'] ?? 'No recommendation available';
     }
 } 

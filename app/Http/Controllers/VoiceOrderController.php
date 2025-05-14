@@ -458,21 +458,15 @@ class VoiceOrderController extends Controller
             // Create a test instance of the OpenAI client
             $openAi = new \Orhanerday\OpenAi\OpenAi($apiKey);
             
-            // Try to make a simple API call
-            $response = $openAi->chat([
-                'model' => 'gpt-3.5-turbo',
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => 'You are a helpful assistant.',
-                    ],
-                    [
-                        'role' => 'user',
-                        'content' => 'Test connection with a short response',
-                    ],
-                ],
+            // Try to make a simple API call using the completion endpoint
+            // This is more likely to work with older versions of the package
+            $response = $openAi->completion([
+                'model' => 'text-davinci-003',
+                'prompt' => 'Say hello in one word',
                 'temperature' => 0.7,
                 'max_tokens' => 10,
+                'frequency_penalty' => 0,
+                'presence_penalty' => 0
             ]);
             
             $decoded = json_decode($response, true);
@@ -485,7 +479,7 @@ class VoiceOrderController extends Controller
                     'message' => 'API key is valid',
                     'valid' => true,
                     'model' => $model,
-                    'response_sample' => data_get($decoded, 'choices.0.message.content', '')
+                    'response_sample' => $decoded['choices'][0]['text'] ?? ''
                 ]);
             } else {
                 return response()->json([
