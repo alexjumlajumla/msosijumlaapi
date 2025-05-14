@@ -46,6 +46,9 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
     // Direct voice-order endpoint (no /rest prefix)
     Route::post('/voice-order', [VoiceOrderController::class, 'processVoiceOrder']);
     Route::post('/voice-order/realtime-transcription', [VoiceOrderController::class, 'realtimeTranscription']);
+    Route::post('/voice-order/repeat', [VoiceOrderController::class, 'repeatOrder']);
+    Route::post('/voice-order/feedback', [VoiceOrderController::class, 'processFeedback']);
+    Route::get('/voice-order/history', [VoiceOrderController::class, 'getOrderHistory']);
 
     Route::post('/auth/resend-verify',                  [VerifyAuthController::class, 'resendVerify'])
         ->middleware('sessions');
@@ -96,6 +99,9 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
         /* Voice Processing & OpenAI */
         Route::post('voice-order', [VoiceOrderController::class, 'processVoiceOrder']);
         Route::post('voice-order/realtime-transcription', [VoiceOrderController::class, 'realtimeTranscription']);
+        Route::post('voice-order/repeat', [VoiceOrderController::class, 'repeatOrder']);
+        Route::post('voice-order/feedback', [VoiceOrderController::class, 'processFeedback']);
+        Route::get('voice-order/history', [VoiceOrderController::class, 'getOrderHistory']);
         Route::post('openai-chat', function() {
             try {
                 $apiKey = config('services.openai.api_key');

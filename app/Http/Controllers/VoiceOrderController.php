@@ -325,4 +325,109 @@ class VoiceOrderController extends Controller
             ], 500);
         }
     }
+    
+    /**
+     * Repeat a previous voice order using its session ID
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function repeatOrder(Request $request)
+    {
+        try {
+            $sessionId = $request->input('session_id');
+            if (!$sessionId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No session ID provided'
+                ], 400);
+            }
+            
+            // Get previous context from cache
+            $previousContext = $this->getPreviousContext($sessionId);
+            if (!$previousContext) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No previous order found for this session'
+                ], 404);
+            }
+            
+            // Process with the previous order data
+            $user = Auth::check() ? Auth::user() : null;
+            $recommendations = $this->foodIntelligenceService->filterProducts($previousContext['orderData']);
+            $recommendationText = $this->aiOrderService->generateRecommendation($previousContext['orderData']);
+            
+            return response()->json([
+                'success' => true, 
+                'transcription' => $previousContext['transcription'],
+                'intent_data' => $previousContext['orderData'],
+                'recommendations' => $recommendations,
+                'recommendation_text' => $recommendationText,
+                'session_id' => $sessionId,
+                'repeated' => true
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error repeating voice order: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to repeat voice order: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    
+    /**
+     * Get voice order history for the current user
+     * 
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getOrderHistory()
+    {
+        try {
+            if (!Auth::check()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Authentication required',
+                    'history' => []
+                ], 401);
+            }
+            
+            $userId = Auth::id();
+            $history = AIAssistantLog::where('user_id', $userId)
+                ->where('request_type', 'voice_order')
+                ->orderBy('created_at', 'desc')
+                ->limit(10)
+                ->get()
+                ->map(function($log) {
+                    return [
+                        'id' => $log->id,
+                        'transcription' => $log->input ?? '',
+                        'session_id' => $log->session_id,
+                        'successful' => $log->successful,
+                        'date' => $log->created_at->toDateTimeString(),
+                        'feedback' => $log->feedback,
+                        'metadata' => $log->metadata
+                    ];
+                });
+            
+            return response()->json([
+                'success' => true,
+                'history' => $history
+            ]);
+            
+        } catch (\Exception $e) {
+            \Log::error('Error fetching voice order history: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to fetch voice order history: ' . $e->getMessage(),
+                'history' => []
+            ], 500);
+        }
+    }
 } 
