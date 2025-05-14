@@ -89,6 +89,53 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
         Route::get('stat',                          [Rest\SettingController::class, 'stat']);
         Route::get('default-sms-payload',			[Rest\SettingController::class, 'defaultSmsPayload']);
 
+        /* Voice Processing & OpenAI */
+        Route::post('voice-order', [VoiceOrderController::class, 'processVoiceOrder']);
+        Route::post('openai-chat', function() {
+            try {
+                $apiKey = config('services.openai.api_key');
+                $openAi = new Orhanerday\OpenAi\OpenAi($apiKey);
+                
+                $request = request();
+                $messages = $request->input('messages', []);
+                
+                if (empty($messages)) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'No messages provided in the request'
+                    ], 400);
+                }
+                
+                $response = $openAi->chat([
+                    'model' => $request->input('model', 'gpt-3.5-turbo'),
+                    'messages' => $messages,
+                    'temperature' => $request->input('temperature', 0.7),
+                    'max_tokens' => $request->input('max_tokens', 150),
+                ]);
+                
+                $decoded = json_decode($response, true);
+                
+                if (isset($decoded['error'])) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'OpenAI API Error: ' . $decoded['error']['message'],
+                        'error' => $decoded['error']
+                    ], 500);
+                }
+                
+                return response()->json([
+                    'success' => true,
+                    'response' => $decoded
+                ]);
+            } catch (\Exception $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'OpenAI chat failed: ' . $e->getMessage(),
+                    'error' => $e->getMessage()
+                ], 500);
+            }
+        });
+
         /* Languages */
         Route::get('languages/default',             [Rest\LanguageController::class, 'default']);
         Route::get('languages/active',              [Rest\LanguageController::class, 'active']);
@@ -1554,8 +1601,6 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
             Route::get('payment-methods', [Admin\LoanAnalyticsController::class, 'getPaymentMethodDistribution']);
         });
     });
-
-    Route::post('/voice-order', [VoiceOrderController::class, 'processVoiceOrder']);
 
     // Test route for Google Cloud credentials
     Route::get('/test-google-credentials', function() {
