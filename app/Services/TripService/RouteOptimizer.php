@@ -24,18 +24,22 @@ class RouteOptimizer
     public function optimise(Trip $trip): array
     {
         $locations = $trip->locations()->get();
+        $startTime = microtime(true);
 
         // Build cache key based on trip id & location hash (lat,lng,updated_at)
         $hash = md5($locations->map(fn ($l) => $l->lat . ',' . $l->lng . '|' . $l->updated_at)->implode(';'));
         $cacheKey = 'optimized_trip_' . $trip->id . '_' . $hash;
 
-        return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($trip, $locations) {
+        $route = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($trip, $locations) {
             // Try AI optimisation first
             if ($this->apiKey) {
                 try {
                     $ordered = $this->optimiseWithOpenAi($trip, $locations);
                     if ($ordered) {
-                        return $ordered;
+                        return [
+                            'route' => $ordered,
+                            'method' => 'openai',
+                        ];
                     }
                 } catch (\Throwable $e) {
                     // Log but silently fall back
@@ -44,8 +48,30 @@ class RouteOptimizer
             }
 
             // Fallback heuristic
-            return $this->optimiseNearestNeighbour($trip, $locations);
+            return [
+                'route' => $this->optimiseNearestNeighbour($trip, $locations),
+                'method' => 'nearest_neighbour',
+            ];
         });
+
+        // Calculate metrics
+        $endTime = microtime(true);
+        $timeTaken = round(($endTime - $startTime) * 1000); // ms
+        $totalLocations = $locations->count();
+        
+        // Save optimization metrics in trip meta
+        $meta = $trip->meta ?? [];
+        $meta['optimized_at'] = now()->toIso8601String();
+        $meta['optimization_metrics'] = [
+            'time_ms' => $timeTaken,
+            'method' => $route['method'],
+            'locations_count' => $totalLocations,
+            'hash' => $hash,
+        ];
+        
+        $trip->update(['meta' => $meta]);
+        
+        return $route['route'];
     }
 
     /**

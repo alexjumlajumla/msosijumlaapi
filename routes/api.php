@@ -1495,8 +1495,18 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
             });
 
             /* Trips */
+            Route::get('trips/optimization-logs', [Admin\TripController::class, 'optimizationLogs']);
             Route::apiResource('trips', Admin\TripController::class)->only('index','store','show');
             Route::post('trips/{trip}/optimize', [Admin\TripController::class, 'optimize']);
+
+            /* Trip Tracking */
+            Route::prefix('trip-tracking')->group(function() {
+                Route::get('active', [Admin\TripTrackingController::class, 'activeTrips'])->name('api.dashboard.admin.trip.tracking.active');
+                Route::post('{trip}/start', [Admin\TripTrackingController::class, 'startTrip'])->name('api.dashboard.admin.trip.tracking.start');
+                Route::post('{trip}/complete', [Admin\TripTrackingController::class, 'completeTrip'])->name('api.dashboard.admin.trip.tracking.complete');
+                Route::post('{trip}/location', [Admin\TripTrackingController::class, 'updateLocation'])->name('api.dashboard.admin.trip.tracking.location.update');
+                Route::get('{trip}/location', [Admin\TripTrackingController::class, 'getLocation'])->name('api.dashboard.admin.trip.tracking.location.get');
+            });
 
             // Inside the admin routes group:
             Route::group(['prefix' => 'dashboard/admin', 'middleware' => ['sanctum.check', 'role:admin|manager']], function () {
@@ -1896,4 +1906,15 @@ Route::get('/debug-openai-config', function() {
         'api_key_format_valid' => !empty($apiKey) && preg_match('/^(sk-|sk-org-)/', $apiKey),
         'config_loaded_from' => app()->environmentFile()
     ]);
+});
+
+// Anywhere in the auth middleware group for drivers
+Route::group(['prefix' => 'driver', 'middleware' => ['sanctum.check', 'auth:sanctum', 'role:deliveryman']], function() {
+    // Add trips endpoints
+    Route::prefix('trips')->group(function() {
+        Route::get('current', [Auth\Driver\LocationController::class, 'currentTrip']);
+        Route::post('start', [Auth\Driver\LocationController::class, 'startTrip']);
+        Route::post('location/update', [Auth\Driver\LocationController::class, 'updateLocation']);
+        Route::post('stop/complete', [Auth\Driver\LocationController::class, 'completeCurrentStop']);
+    });
 });
