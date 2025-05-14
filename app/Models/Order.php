@@ -513,12 +513,26 @@ class Order extends Model
 		return $this->morphMany(ModelLog::class, 'model');
 	}
 
-	public function trip(): HasOne
+	/**
+	 * Get the trip associated with the order (legacy method)
+	 * This only exists for backward compatibility
+	 */
+	public function trip()
 	{
-		return $this->hasOne(Trip::class);
+		// Use the first trip from the trips relationship to maintain backward compatibility
+		return $this->hasOneThrough(
+			Trip::class,
+			\DB::raw('(select distinct order_id, trip_id from order_trips) as ot'),
+			'order_id',
+			'id',
+			'id',
+			'trip_id'
+		);
 	}
 
-	// Add a new method for the many-to-many relationship with Trip
+	/**
+	 * Get all trips associated with the order
+	 */
 	public function trips(): BelongsToMany
 	{
 		return $this->belongsToMany(Trip::class, 'order_trips')

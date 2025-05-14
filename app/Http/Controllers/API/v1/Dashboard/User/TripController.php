@@ -32,11 +32,11 @@ class TripController extends UserBaseController
             }
 
             // Check if the trip belongs to an order for this user
-            $order = Order::where('id', $trip->order_id)
-                ->where('user_id', auth('sanctum')->id())
-                ->first();
-
-            if (!$order) {
+            $userOrderIds = Order::where('user_id', auth('sanctum')->id())->pluck('id')->toArray();
+            $tripOrderIds = $trip->orders()->pluck('orders.id')->toArray();
+            
+            // Check if any of the trip's orders belong to the user
+            if (!array_intersect($userOrderIds, $tripOrderIds)) {
                 return $this->onErrorResponse([
                     'code'    => ResponseError::ERROR_403,
                     'message' => __('errors.' . ResponseError::ERROR_403, locale: $this->language)
