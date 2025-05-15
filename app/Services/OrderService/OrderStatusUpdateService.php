@@ -295,48 +295,6 @@ class OrderStatusUpdateService extends CoreService
             !empty($sellerToken) && is_array($sellerToken)          ? $sellerToken      : [],
         );
 
-        // Get push notification keys
-        $default = data_get(Language::languagesList()->where('default', 1)->first(), 'locale');
-        $model = Language::where('locale', $this->language)->first() ?? Language::where('default', 1)->first();
-        $deliveryTitle = 'Your delivery status has been updated';
-        $deliveryBody = '';
-        
-        $deliveryTitleTrans = Translation::where(function ($q) use ($default) {
-            $q->where('locale', $this->language)->orWhere('locale', $default);
-        })
-        ->where('key', 'delivery_title')
-        ->first();
-        
-        $deliveryBodyTrans = Translation::where(function ($q) use ($default) {
-            $q->where('locale', $this->language)->orWhere('locale', $default);
-        })
-        ->where('key', 'delivery_body')
-        ->first();
-        
-        if ($deliveryTitleTrans) {
-            $deliveryTitle = $deliveryTitleTrans->value;
-        }
-        
-        if ($deliveryBodyTrans) {
-            $deliveryBody = $deliveryBodyTrans->value;
-            $deliveryBody = str_replace("{code}", "#" . $order->id, $deliveryBody);
-            $deliveryBody = str_replace("{status}", $order->status, $deliveryBody);
-        }
-
-        // Get active system pushes
-        $systemNotifications = PushNotification::where([
-            ['active', 1],
-            ['type', 'status']
-        ])->pluck('id')->toArray();
-
-        $webSockets = [];
-
-        /** @var PushNotification $notification */
-        $pushNotification = PushNotification::where([
-            ['type', 'status'],
-            ['id', $order->status]
-        ])->first();
-
         if (!$firebaseTokens || count($firebaseTokens) === 0) {
             return [
                 'status' => true,
@@ -345,58 +303,74 @@ class OrderStatusUpdateService extends CoreService
             ];
         }
 
-        if (in_array($order->status, $systemNotifications) || $pushNotification) {
-
-            $title = $pushNotification ? Translation::where([
-                ['key', $pushNotification->id . '_title'],
-                ['locale', $this->language],
-            ])->first()?->value : $deliveryTitle;
-
-            $body  = $pushNotification ? Translation::where([
-                ['key', $pushNotification->id . '_body'],
-                ['locale', $this->language],
-            ])->first()?->value : $deliveryBody;
-
-            if ($pushNotification && !empty($body)) {
-                $body = str_replace("{code}", "#" . $order->id, $body);
-                $body = str_replace("{status}", $order->status, $body);
-            }
-
-            if (!empty($body) && !empty($title)) {
-                $user       = auth('sanctum')->user();
-                $userRole   = $user->hasRole('deliveryman') ? 'deliveryman' : 'users';
-                $webSockets = [
-                    'order' => $order->id,
-                    'status' => $order->status,
-                ];
-
-                if ($userRole == 'deliveryman' && $user->id == $order->deliveryman?->id) {
-                    $data = [
-                        'title' => $title,
-                        'body' => $body,
-                        'type' => PushNotification::STATUS_CHANGED . "-deliveryman",
-                        'id' => $order->id,
-                        'order' => $order,
-                    ];
-
-                    $userOrder = (new NotificationHelper)->deliveryManOrder($order, 'deliveryman');
-
-                    $this->sendFirebaseNotification($firebaseTokens, $title, $body, $data, $webSockets, $userOrder);
-                }
-
-                $data = [
-                    'title' => $title,
-                    'body' => $body,
-                    'type' => PushNotification::STATUS_CHANGED . "-user",
-                    'id' => $order->id,
-                    'order' => $order,
-                ];
-
-                $userOrder = (new NotificationHelper)->deliveryManOrder($order, 'user');
-
-                $this->sendFirebaseNotification($firebaseTokens, $title, $body, $data, $webSockets, $userOrder);
-            }
+        // Get translation for current language
+        $default = data_get(Language::languagesList()->where('default', 1)->first(), 'locale');
+        
+        // Get status title translation
+        $statusTitle = Translation::where(function ($q) use ($default) {
+            $q->where('locale', $this->language)->orWhere('locale', $default);
+        })
+        ->where('key', $order->status)
+        ->first()?->value;
+        
+        $title = 'Your order status has been updated';
+        $body = 'Order #' . $order->id . ' status is now: ' . ($statusTitle ?: $order->status);
+        
+        // Custom translations if available
+        $titleTrans = Translation::where(function ($q) use ($default) {
+            $q->where('locale', $this->language)->orWhere('locale', $default);
+        })
+        ->where('key', 'delivery_title')
+        ->first();
+        
+        $bodyTrans = Translation::where(function ($q) use ($default) {
+            $q->where('locale', $this->language)->orWhere('locale', $default);
+        })
+        ->where('key', 'delivery_body')
+        ->first();
+        
+        if ($titleTrans) {
+            $title = $titleTrans->value;
         }
+        
+        if ($bodyTrans) {
+            $body = $bodyTrans->value;
+            $body = str_replace("{code}", "#" . $order->id, $body);
+            $body = str_replace("{status}", $statusTitle ?: $order->status, $body);
+        }
+
+        $user = auth('sanctum')->user();
+        $userRole = $user->hasRole('deliveryman') ? 'deliveryman' : 'users';
+        $webSockets = [
+            'order' => $order->id,
+            'status' => $order->status,
+        ];
+
+        if ($userRole == 'deliveryman' && $user->id == $order->deliveryman?->id) {
+            $data = [
+                'title' => $title,
+                'body' => $body,
+                'type' => PushNotification::STATUS_CHANGED . "-deliveryman",
+                'id' => $order->id,
+                'order' => $order,
+            ];
+
+            $userOrder = (new NotificationHelper)->deliveryManOrder($order, 'deliveryman');
+
+            $this->sendFirebaseNotification($firebaseTokens, $title, $body, $data, $webSockets, $userOrder);
+        }
+
+        $data = [
+            'title' => $title,
+            'body' => $body,
+            'type' => PushNotification::STATUS_CHANGED . "-user",
+            'id' => $order->id,
+            'order' => $order,
+        ];
+
+        $userOrder = (new NotificationHelper)->deliveryManOrder($order, 'user');
+
+        $this->sendFirebaseNotification($firebaseTokens, $title, $body, $data, $webSockets, $userOrder);
 
         return [
             'status' => true,
