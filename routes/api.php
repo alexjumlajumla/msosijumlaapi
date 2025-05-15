@@ -1925,3 +1925,12 @@ Route::group(['prefix' => 'driver', 'middleware' => ['sanctum.check', 'auth:sanc
         Route::post('stop/complete', [Auth\Driver\LocationController::class, 'completeCurrentStop']);
     });
 });
+
+// Admin AI Assistant API Routes
+Route::group(['prefix' => 'v1/dashboard/admin/ai-assistant', 'middleware' => ['auth:api', 'admin']], function () {
+    Route::get('/statistics', [App\Http\Controllers\Admin\AIAssistantController::class, 'getStatistics']);
+    Route::get('/logs', [App\Http\Controllers\Admin\AIAssistantController::class, 'getLogs']);
+    Route::get('/top-filters', [App\Http\Controllers\Admin\AIAssistantController::class, 'getTopFilters']);
+    Route::get('/top-exclusions', [App\Http\Controllers\Admin\AIAssistantController::class, 'getTopExclusions']);
+    Route::get('/log/{id}', [App\Http\Controllers\Admin\AIAssistantController::class, 'getLog']);
+});
