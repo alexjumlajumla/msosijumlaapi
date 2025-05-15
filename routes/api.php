@@ -50,6 +50,7 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
     Route::post('/voice-order/repeat', [VoiceOrderController::class, 'repeatOrder'])->middleware('throttle:30,1');
     Route::post('/voice-order/feedback', [VoiceOrderController::class, 'processFeedback']);
     Route::get('/voice-order/history', [VoiceOrderController::class, 'getOrderHistory']);
+    Route::get('/voice-order/log/{id}', [VoiceOrderController::class, 'getVoiceLog']);
     Route::post('/test-openai-key', [VoiceOrderController::class, 'testOpenAIKey']);
     Route::post('/voice-order/test-transcribe', [VoiceOrderController::class, 'testTranscribe']);
 

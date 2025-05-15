@@ -35,12 +35,24 @@ class VoiceOrderController extends Controller
         $success = false;
         $sessionId = $request->input('session_id', md5(uniqid()));
         
+        // Log the entire request for debugging
+        \Log::info('Voice order request:', [
+            'request' => $request->all(),
+            'files' => $request->hasFile('audio') ? 'Audio file present' : 'No audio file',
+            'headers' => $request->header(),
+            'session_id' => $sessionId
+        ]);
+        
         $logData = [
             'user_id' => $userId,
             'request_type' => 'voice_order',
             'successful' => false,
             'session_id' => $sessionId,
-            'metadata' => [] // Initialize metadata
+            'metadata' => [
+                'request_time' => now()->toIso8601String(),
+                'client_ip' => $request->ip(),
+                'user_agent' => $request->userAgent()
+            ]
         ];
 
         try {
@@ -48,6 +60,7 @@ class VoiceOrderController extends Controller
             if (Auth::check()) {
                 $user = Auth::user();
                 if (!$this->checkVoiceOrderCredits($user)) {
+                    \Log::warning('User does not have enough credits', ['user_id' => $userId]);
                     return response()->json([
                         'success' => false, 
                         'message' => 'You have used all your voice order credits. Please upgrade to continue.',
@@ -56,18 +69,37 @@ class VoiceOrderController extends Controller
                 }
             }
 
+            // Validate audio file exists
+            if (!$request->hasFile('audio')) {
+                \Log::error('No audio file provided in the request');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No audio file provided',
+                ], 422);
+            }
+
             $audioFilePath = $request->file('audio')->getPathname();
             $language = $request->input('language', 'en-US');
+            
+            // Log audio file details
+            \Log::info('Audio file details', [
+                'size' => filesize($audioFilePath),
+                'mime' => $request->file('audio')->getMimeType(),
+                'extension' => $request->file('audio')->extension(),
+                'language' => $language
+            ]);
             
             // Check for cached transcription with same audio hash
             $audioHash = md5_file($audioFilePath);
             $cachedTranscription = Cache::get('voice_transcription_' . $audioHash);
             
             if ($cachedTranscription) {
+                \Log::info('Using cached transcription', ['hash' => $audioHash]);
                 $transcription = $cachedTranscription;
                 $logData['metadata']['cached'] = true;
             } else {
                 // Transcribe the audio with language preference
+                \Log::info('Transcribing audio', ['language' => $language]);
                 $transcription = $this->voiceOrderService->transcribeAudio($audioFilePath, $language);
                 
                 // Cache the transcription for 2 minutes
@@ -83,12 +115,26 @@ class VoiceOrderController extends Controller
                 ($transcription['transcription'] ?? '') : 
                 (is_string($transcription) ? $transcription : '');
                 
+            \Log::info('Transcription result', ['text' => $transcriptionText]);
+            
+            // Validate transcription text
+            if (empty($transcriptionText)) {
+                \Log::warning('Empty transcription text from audio');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No voice text could be extracted from the audio.',
+                ], 422);
+            }
+                
             // Fix: Pass transcription as string to processOrderIntent
+            \Log::info('Processing order intent', ['text' => $transcriptionText]);
             $orderData = $this->aiOrderService->processOrderIntent($transcriptionText, $user);
+            \Log::info('Order intent processed', ['data' => $orderData]);
             
             // Get conversation context if this is a follow-up
             $previousContext = $this->getPreviousContext($sessionId);
             if ($previousContext && !empty($previousContext['orderData'])) {
+                \Log::info('Merging with previous context', ['session_id' => $sessionId]);
                 $orderData = $this->mergeWithPreviousContext($orderData, $previousContext['orderData']);
             }
 
@@ -99,10 +145,13 @@ class VoiceOrderController extends Controller
             $logData['metadata']['order_data'] = $orderData;
 
             // Get product recommendations based on order data
+            \Log::info('Getting product recommendations', ['filters' => $orderData]);
             $recommendations = $this->foodIntelligenceService->filterProducts($orderData);
+            \Log::info('Recommendations retrieved', ['count' => $recommendations->count()]);
             
             // Generate a recommendation explanation
             $recommendationText = $this->aiOrderService->generateRecommendation($orderData);
+            \Log::info('Generated recommendation text', ['text' => $recommendationText]);
             
             // Update log data with recommendations
             $logData['product_ids'] = $recommendations->pluck('id')->toArray();
@@ -130,7 +179,7 @@ class VoiceOrderController extends Controller
             $logData['processing_time_ms'] = (int)((microtime(true) - $startTime) * 1000);
             $logEntry = AIAssistantLog::create($logData);
             
-            return response()->json([
+            $response = [
                 'success' => true, 
                 'transcription' => $transcriptionText,
                 'intent_data' => $orderData,
@@ -138,9 +187,23 @@ class VoiceOrderController extends Controller
                 'recommendation_text' => $recommendationText,
                 'session_id' => $sessionId,
                 'log_id' => $logEntry->id
+            ];
+            
+            \Log::info('Voice order processed successfully', [
+                'session_id' => $sessionId,
+                'log_id' => $logEntry->id,
+                'processing_time_ms' => $logData['processing_time_ms']
             ]);
+            
+            return response()->json($response);
         } catch (\Exception $e) {
-            Log::error('Error processing voice order: ' . $e->getMessage() . ' | ' . $e->getTraceAsString());
+            \Log::error('Error processing voice order: ' . $e->getMessage(), [
+                'exception' => get_class($e),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
             $logData['output'] = $e->getMessage();
             $logData['response_content'] = $e->getMessage();
             
@@ -725,6 +788,53 @@ class VoiceOrderController extends Controller
                 'valid' => false,
                 'error' => $e->getMessage()
             ], 500);
+        }
+    }
+
+    /**
+     * Get a specific voice order log by ID
+     * 
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getVoiceLog($id)
+    {
+        try {
+            $log = AIAssistantLog::with('user')->findOrFail($id);
+            
+            // Add additional debug information if available
+            $debugInfo = [
+                'transcription' => $log->input,
+                'response' => $log->output,
+                'successful' => $log->successful,
+                'processing_time_ms' => $log->processing_time_ms,
+                'filters_detected' => $log->filters_detected,
+                'metadata' => $log->metadata,
+                'created_at' => $log->created_at->toDateTimeString(),
+                'user' => $log->user ? [
+                    'id' => $log->user->id,
+                    'name' => $log->user->name,
+                    'email' => $log->user->email,
+                ] : null
+            ];
+            
+            \Log::info('Voice log retrieved', ['log_id' => $id]);
+            
+            return response()->json([
+                'success' => true,
+                'log' => $log,
+                'debug_info' => $debugInfo
+            ]);
+        } catch (\Exception $e) {
+            \Log::error('Error retrieving voice log: ' . $e->getMessage(), [
+                'id' => $id,
+                'exception' => get_class($e)
+            ]);
+            
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve voice log: ' . $e->getMessage()
+            ], 404);
         }
     }
 } 
