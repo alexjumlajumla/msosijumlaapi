@@ -21,9 +21,13 @@ use App\Services\CoreService;
 use App\Helpers\ResponseError;
 use App\Models\NotificationUser;
 use App\Models\PushNotification;
+use App\Models\Settings;
 use App\Services\EmailSettingService\EmailSendService;
 use App\Services\WalletHistoryService\WalletHistoryService;
 use App\Services\OrderService\OrderSmsService;
+use App\Models\Trip;
+use App\Models\TripLocation;
+use App\Helpers\NotificationHelper;
 
 class OrderStatusUpdateService extends CoreService
 {
@@ -87,52 +91,46 @@ class OrderStatusUpdateService extends CoreService
 
                 if ($status == Order::STATUS_DELIVERED) {
 
-                    $default = data_get(Language::languagesList()->where('default', 1)->first(), 'locale');
+                    // Check if this order is part of a Trip and mark the related location as completed
+                    $this->completeOrderTripLocation($order);
 
-                    $tStatus = Translation::where(function ($q) use ($default) {
-                        $q->where('locale', $this->language)->orWhere('locale', $default);
-                    })
-                        ->where('key', $status)
-                        ->first()?->value;
+                    // Add points to user
+                    if (Settings::where('key', 'reward_system')->first()?->value) {
 
-					$paymentWallet = Payment::where('tag', Payment::TAG_WALLET)->value('id');
+                        if (Settings::where('key', 'reward_type')->first()?->value == 'order') {
 
-					$isWallet = $order?->transaction?->payment_sys_id === $paymentWallet;
+                            $type = Settings::where('key', 'order_point_type')->first()?->value;
 
-					if ($isWallet) {
-						$this->adminWalletTopUp($order);
-					}
+                            if ($type == 'fix') {
+                                // fixed point to each order
+                                $orderPoints = (float)Settings::where('key', 'fixed_point')->first()?->value;
 
-					$order = $order->loadMissing([
-						'coupon',
-						'pointHistories',
-					]);
+                            } else {
+                                // percentage point to the order amount
+                                $percentage = (float)Settings::where('key', 'percentage_point')->first()?->value;
+                                $orderPoints = ($percentage * $order->price) / 100;
+                            }
 
-                    $point = Point::getActualPoint($order->total_price, $order->shop_id);
+                            $points = Point::orderBy('from', 'asc')->get();
+                            $userPoint = $order->user?->point;
+                            $reward = 0;
 
-                    if (!empty($point)) {
-                        $token  = $order->user?->firebase_token;
-                        $token = is_array($token) ? $token : [$token];
+                            if ($userPoint) {
+                                $lastPoint = $userPoint;
+                                $lastPoint->price += $orderPoints;
+                                $lastPoint->save();
 
-                        $this->sendNotification(
-                            $token,
-                            __('errors.' . ResponseError::ADD_CASHBACK, ['status' => !empty($tStatus) ? $tStatus : $status], $this->language),
-                            $order->id,
-                            [
-                                'id'     => $order->id,
-                                'status' => $order->status,
-                                'type'   => PushNotification::ADD_CASHBACK
-                            ],
-                            [$order->user_id]
-                        );
+                                if ($points->count() > 0) {
+                                    foreach ($points as $key => $point) {
+                                        if ($lastPoint->price >= $point->from) {
+                                            $reward = $point->reward;
+                                        }
+                                    }
 
-                        $order->pointHistories()->create([
-                            'user_id'   => $order->user_id,
-                            'price'     => $point,
-                            'note'      => 'cashback',
-                        ]);
-
-                        $order->user?->wallet?->increment('price', $point);
+                                    $lastPoint->update(['value' => $reward]);
+                                }
+                            }
+                        }
                     }
 
                     PayReferral::dispatchAfterResponse($order->user, 'increment');
@@ -156,18 +154,18 @@ class OrderStatusUpdateService extends CoreService
                                 ->exists();
 
                             if (!$hasReceipt) {
-                                $paymentTag = $order->transaction?->paymentSystem?->tag ?? \App\Models\Payment::TAG_CASH;
-
-                                // Map internal payment tags to VFDService accepted values
-                                $paymentMethod = match ($paymentTag) {
-                                    \App\Models\Payment::TAG_CASH => 'cash',
-                                    \App\Models\Payment::TAG_WALLET, \App\Models\Payment::TAG_STRIPE, \App\Models\Payment::TAG_PAY_PAL,
-                                    \App\Models\Payment::TAG_PAY_STACK, \App\Models\Payment::TAG_RAZOR_PAY, \App\Models\Payment::TAG_MERCADO_PAGO,
-                                    \App\Models\Payment::TAG_PAY_TABS, \App\Models\Payment::TAG_FLUTTER_WAVE, \App\Models\Payment::TAG_MOLLIE,
-                                    \App\Models\Payment::TAG_IYZICO, \App\Models\Payment::TAG_MAKSEKESKUS, \App\Models\Payment::TAG_ZAIN_CASH,
-                                    \App\Models\Payment::TAG_MOYA_SAR, \App\Models\Payment::TAG_SELCOM => 'card',
-                                    default => 'other',
-                                };
+                                // Determine payment method for the delivery fee
+                                $paymentMethod = \App\Models\VfdReceipt::PAYMENT_CASH; // Default
+                                if ($order->transaction) {
+                                    $paymentSystem = $order->transaction->paymentSystem;
+                                    if ($paymentSystem) {
+                                        if ($paymentSystem->tag === Payment::TAG_CASH) {
+                                            $paymentMethod = \App\Models\VfdReceipt::PAYMENT_CASH;
+                                        } else {
+                                            $paymentMethod = \App\Models\VfdReceipt::PAYMENT_CREDIT_CARD;
+                                        }
+                                    }
+                                }
 
                                 (new \App\Services\VfdService\VfdService)->generateReceipt(
                                     \App\Models\VfdReceipt::TYPE_DELIVERY,
@@ -292,65 +290,128 @@ class OrderStatusUpdateService extends CoreService
         }
 
         $firebaseTokens = array_merge(
-            !empty($userToken) && is_array($userToken)        ? $userToken        : [],
-            !empty($deliveryManToken) && is_array($deliveryManToken) ? $deliveryManToken : [],
-            !empty($sellerToken) && is_array($sellerToken)           ? $sellerToken      : [],
+            !empty($userToken) && is_array($userToken)              ? $userToken        : [],
+            !empty($deliveryManToken) && is_array($deliveryManToken)      ? $deliveryManToken : [],
+            !empty($sellerToken) && is_array($sellerToken)          ? $sellerToken      : [],
         );
 
-        $userIds = array_merge(
-            !empty($userToken) && $order->user?->id         ? [$order->user?->id]          : [],
-            !empty($deliveryManToken) && $order->deliveryMan?->id  ? [$order->deliveryMan?->id]   : [],
-            !empty($sellerToken) && $order->shop?->seller?->id     ? [$order->shop?->seller?->id] : []
-        );
+        // Get push notification keys
+        $model         = Language::languageWith($this->language)->first();
+        $deliveryTitle = $model->value('delivery_title') ?? 'Your delivery status has been updated';
+        $deliveryBody  = $model->value('delivery_body') ?? '';
 
-        $default = data_get(Language::languagesList()->where('default', 1)->first(), 'locale');
-
-        $tStatus = Translation::where(function ($q) use ($default) {
-            $q->where('locale', $this->language)->orWhere('locale', $default);
-        })
-            ->where('key', $status)
-            ->first()?->value;
-
-        $this->sendNotification(
-            array_values(array_unique($firebaseTokens)),
-            __('errors.' . ResponseError::STATUS_CHANGED, ['status' => !empty($tStatus) ? $tStatus : $status], $this->language),
-            $order->id,
-            [
-                'id'     => $order->id,
-                'status' => $order->status,
-                'type'   => PushNotification::STATUS_CHANGED
-            ],
-            $userIds,
-            __('errors.' . ResponseError::STATUS_CHANGED, ['status' => !empty($tStatus) ? $tStatus : $status], $this->language),
-        );
-
-        return ['status' => true, 'code' => ResponseError::NO_ERROR, 'data' => $order];
-    }
-
-	/**
-	 * @param Order $order
-	 * @return void
-	 * @throws Throwable
-	 */
-    private function adminWalletTopUp(Order $order): void
-    {
-        /** @var User $admin */
-        $admin = User::with('wallet')->whereHas('roles', fn($q) => $q->where('name', 'admin'))->first();
-
-        if (!$admin->wallet) {
-            Log::error("admin #$admin?->id doesnt have wallet");
-            return;
+        if (!empty($deliveryBody)) {
+            $deliveryBody = str_replace("{code}", "#" . $order->id, $deliveryBody);
+            $deliveryBody = str_replace("{status}", $order->status, $deliveryBody);
         }
 
-        $request = request()->merge([
-            'type'      => 'topup',
-            'price'     => $order->total_price,
-            'note'      => "For Seller Order #$order->id",
-            'status'    => WalletHistory::PAID,
-            'user'      => $admin,
-        ])->all();
+        // Get active system pushes
+        $systemNotifications = PushNotification::where([
+            ['active', 1],
+            ['type', 'status']
+        ])->pluck('notification_id')->toArray();
 
-        (new WalletHistoryService)->create($request);
+        $webSockets = [];
+
+        /** @var PushNotification $notification */
+        $pushNotification = PushNotification::where([
+            ['type', 'status'],
+            ['notification_id', $order->status]
+        ])->first();
+
+        if (!empty($deliveryBody) && !empty($deliveryTitle)) {
+            $user       = auth('sanctum')->user();
+            $userRole   = $user->hasRole('deliveryman') ? 'deliveryman' : 'users';
+            $webSockets = [
+                'order' => $order->id,
+                'status' => $order->status,
+            ];
+
+            if ($userRole == 'deliveryman' && $user->id == $order->deliveryman?->id) {
+                $data = [
+                    'title' => $deliveryTitle,
+                    'body' => $deliveryBody,
+                    'type' => PushNotification::STATUS_CHANGED . "-deliveryman",
+                    'id' => $order->id,
+                    'order' => $order,
+                ];
+
+                $userOrder = (new NotificationHelper)->deliveryManOrder($order, 'deliveryman');
+
+                $this->sendFirebaseNotification($firebaseTokens, $deliveryTitle, $deliveryBody, $data, $webSockets, $userOrder);
+            }
+
+            $data = [
+                'title' => $deliveryTitle,
+                'body' => $deliveryBody,
+                'type' => PushNotification::STATUS_CHANGED . "-user",
+                'id' => $order->id,
+                'order' => $order,
+            ];
+
+            $userOrder = (new NotificationHelper)->deliveryManOrder($order, 'user');
+
+            $this->sendFirebaseNotification($firebaseTokens, $deliveryTitle, $deliveryBody, $data, $webSockets, $userOrder);
+        }
+
+        return [
+            'status' => true,
+            'code'   => ResponseError::NO_ERROR,
+            'data'   => $order
+        ];
     }
 
+    /**
+     * Check if order is part of a Trip and complete the related location
+     */
+    private function completeOrderTripLocation(Order $order): void
+    {
+        try {
+            // Find the trip location related to this order
+            $tripLocation = TripLocation::where('order_id', $order->id)
+                ->orWhere(function($query) use ($order) {
+                    // If no direct order_id, try to match by coordinates
+                    if ($order->location && isset($order->location['latitude']) && isset($order->location['longitude'])) {
+                        $query->where('lat', $order->location['latitude'])
+                              ->where('lng', $order->location['longitude']);
+                    }
+                })
+                ->first();
+
+            if ($tripLocation) {
+                // Mark the location as arrived
+                $tripLocation->update([
+                    'status' => 'arrived',
+                    'updated_at' => now()
+                ]);
+
+                // Get the trip
+                $trip = Trip::find($tripLocation->trip_id);
+                
+                if ($trip) {
+                    // Check if all locations are now arrived
+                    $pendingLocations = $trip->locations()->where('status', 'pending')->count();
+                    
+                    if ($pendingLocations === 0) {
+                        // If all locations are completed, mark trip as completed
+                        $trip->update([
+                            'status' => 'completed',
+                            'updated_at' => now(),
+                            'meta' => array_merge($trip->meta ?? [], [
+                                'completed_at' => now()->toIso8601String(),
+                                'completion_method' => 'order_delivered'
+                            ])
+                        ]);
+                        
+                        Log::info("Trip #{$trip->id} automatically completed due to order #{$order->id} delivery");
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            // Just log errors but don't interrupt the main process
+            Log::error("Error completing trip location for order #{$order->id}: " . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
 }
