@@ -37,7 +37,8 @@ class AIAssistantLog extends Model
         'is_feedback_provided',
         'was_helpful',
         'feedback_comment',
-        'session_id'
+        'session_id',
+        'feedback'
     ];
 
     /**
@@ -53,6 +54,7 @@ class AIAssistantLog extends Model
         'product_ids' => 'array',
         'metadata' => 'array',
         'processing_time_ms' => 'integer',
+        'feedback' => 'array'
     ];
 
     /**

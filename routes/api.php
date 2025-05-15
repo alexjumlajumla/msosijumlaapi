@@ -45,12 +45,13 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
         ->middleware('sessions');
 
     // Direct voice-order endpoint (no /rest prefix)
-    Route::post('/voice-order', [VoiceOrderController::class, 'processVoiceOrder']);
-    Route::post('/voice-order/realtime-transcription', [VoiceOrderController::class, 'realtimeTranscription']);
-    Route::post('/voice-order/repeat', [VoiceOrderController::class, 'repeatOrder']);
+    Route::post('/voice-order', [VoiceOrderController::class, 'processVoiceOrder'])->middleware('throttle:20,1');
+    Route::post('/voice-order/realtime-transcription', [VoiceOrderController::class, 'realtimeTranscription'])->middleware('throttle:30,1');
+    Route::post('/voice-order/repeat', [VoiceOrderController::class, 'repeatOrder'])->middleware('throttle:30,1');
     Route::post('/voice-order/feedback', [VoiceOrderController::class, 'processFeedback']);
     Route::get('/voice-order/history', [VoiceOrderController::class, 'getOrderHistory']);
     Route::post('/test-openai-key', [VoiceOrderController::class, 'testOpenAIKey']);
+    Route::post('/voice-order/test-transcribe', [VoiceOrderController::class, 'transcribeAudio'])->middleware('throttle:20,1');
 
     // OpenAI Testing
     Route::match(['GET', 'POST'], '/openai-chat', [OpenAITestController::class, 'testChatCompletion']);
@@ -102,12 +103,13 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
         Route::get('default-sms-payload',			[Rest\SettingController::class, 'defaultSmsPayload']);
 
         /* Voice Processing & OpenAI */
-        Route::post('voice-order', [VoiceOrderController::class, 'processVoiceOrder']);
-        Route::post('voice-order/realtime-transcription', [VoiceOrderController::class, 'realtimeTranscription']);
-        Route::post('voice-order/repeat', [VoiceOrderController::class, 'repeatOrder']);
+        Route::post('voice-order', [VoiceOrderController::class, 'processVoiceOrder'])->middleware('throttle:20,1');
+        Route::post('voice-order/realtime-transcription', [VoiceOrderController::class, 'realtimeTranscription'])->middleware('throttle:30,1');
+        Route::post('voice-order/repeat', [VoiceOrderController::class, 'repeatOrder'])->middleware('throttle:30,1');
         Route::post('voice-order/feedback', [VoiceOrderController::class, 'processFeedback']);
         Route::get('voice-order/history', [VoiceOrderController::class, 'getOrderHistory']);
         Route::post('test-openai-key', [VoiceOrderController::class, 'testOpenAIKey']);
+        Route::post('voice-order/test-transcribe', [VoiceOrderController::class, 'transcribeAudio'])->middleware('throttle:20,1');
         Route::match(['GET', 'POST'], 'openai-chat', [OpenAITestController::class, 'testChatCompletion']);
 
         /* Languages */
