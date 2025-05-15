@@ -72,7 +72,7 @@ class VoiceOrderController extends Controller
                 $orderData = $this->mergeWithPreviousContext($orderData, $previousContext['orderData']);
             }
 
-            // Update log data with input
+            // Update log data with input and filters
             $logData['input'] = $transcription;
             $logData['request_content'] = $transcription;
             $logData['filters_detected'] = $orderData;
@@ -88,6 +88,8 @@ class VoiceOrderController extends Controller
             $logData['product_ids'] = $recommendations->pluck('id')->toArray();
             $logData['metadata']['products'] = $recommendations->pluck('id')->toArray();
             $logData['metadata']['recommendation_text'] = $recommendationText;
+            $logData['output'] = $recommendationText;
+            $logData['response_content'] = $recommendationText;
             
             // Save context for follow-up questions
             $this->saveConversationContext($sessionId, [

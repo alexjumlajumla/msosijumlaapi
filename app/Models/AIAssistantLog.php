@@ -15,7 +15,7 @@ class AIAssistantLog extends Model
      *
      * @var string
      */
-    protected $table = 'a_i_assistant_logs';
+    protected $table = 'ai_assistant_logs';
 
     /**
      * The attributes that are mass assignable.
@@ -25,14 +25,19 @@ class AIAssistantLog extends Model
     protected $fillable = [
         'user_id',
         'request_type',
+        'input',
+        'output',
         'request_content',
         'response_content',
         'successful',
         'processing_time_ms',
+        'filters_detected',
+        'product_ids',
         'metadata',
         'is_feedback_provided',
         'was_helpful',
         'feedback_comment',
+        'session_id'
     ];
 
     /**
@@ -44,6 +49,8 @@ class AIAssistantLog extends Model
         'successful' => 'boolean',
         'is_feedback_provided' => 'boolean',
         'was_helpful' => 'boolean',
+        'filters_detected' => 'array',
+        'product_ids' => 'array',
         'metadata' => 'array',
         'processing_time_ms' => 'integer',
     ];
