@@ -17,6 +17,11 @@ class OpenAITestController extends Controller
      */
     public function testChatCompletion(Request $request)
     {
+        // Handle CORS OPTIONS preflight request
+        if ($request->isMethod('options')) {
+            return response()->json(['message' => 'OK'], 200);
+        }
+        
         try {
             $isGetRequest = $request->isMethod('get');
             $apiKey = $request->input('api_key') ?: config('services.openai.api_key');
