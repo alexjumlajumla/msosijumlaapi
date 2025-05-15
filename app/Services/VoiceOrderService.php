@@ -58,8 +58,7 @@ class VoiceOrderService
     
             // Configure the recognition settings
             $config = (new RecognitionConfig())
-                ->setEncoding(RecognitionConfig\AudioEncoding::LINEAR16)
-                ->setSampleRateHertz(16000)
+                ->setEncoding(RecognitionConfig\AudioEncoding::WEBM_OPUS)
                 ->setLanguageCode($languageCode)
                 ->setModel('command_and_search') // Optimized for short commands
                 ->setUseEnhanced(true) // Use enhanced model
