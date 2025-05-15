@@ -51,7 +51,7 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
     Route::post('/voice-order/feedback', [VoiceOrderController::class, 'processFeedback']);
     Route::get('/voice-order/history', [VoiceOrderController::class, 'getOrderHistory']);
     Route::post('/test-openai-key', [VoiceOrderController::class, 'testOpenAIKey']);
-    Route::post('/voice-order/test-transcribe', [VoiceOrderController::class, 'transcribeAudio'])->middleware('throttle:20,1');
+    Route::post('/voice-order/test-transcribe', [VoiceOrderController::class, 'testTranscribe']);
 
     // OpenAI Testing
     Route::match(['GET', 'POST'], '/openai-chat', [OpenAITestController::class, 'testChatCompletion']);
@@ -109,7 +109,7 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
         Route::post('voice-order/feedback', [VoiceOrderController::class, 'processFeedback']);
         Route::get('voice-order/history', [VoiceOrderController::class, 'getOrderHistory']);
         Route::post('test-openai-key', [VoiceOrderController::class, 'testOpenAIKey']);
-        Route::post('voice-order/test-transcribe', [VoiceOrderController::class, 'transcribeAudio'])->middleware('throttle:20,1');
+        Route::post('voice-order/test-transcribe', [VoiceOrderController::class, 'testTranscribe']);
         Route::match(['GET', 'POST'], 'openai-chat', [OpenAITestController::class, 'testChatCompletion']);
 
         /* Languages */

@@ -594,10 +594,38 @@ class VoiceOrderController extends Controller
     }
 
     /**
-     * Test OpenAI API key validity
-     * 
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * Simple endpoint to test API connectivity
+     */
+    public function testTranscribe(Request $request)
+    {
+        try {
+            // Return a simple success response to confirm API connectivity
+            return response()->json([
+                'success' => true,
+                'message' => 'Voice API connectivity test successful',
+                'text' => 'Test transcription successful',
+                'timestamp' => now()->toIso8601String(),
+                'server_info' => [
+                    'php_version' => PHP_VERSION,
+                    'laravel_version' => app()->version(),
+                    'environment' => app()->environment(),
+                ]
+            ]);
+        } catch (\Exception $e) {
+            // Log the error
+            Log::error('Error in test transcribe endpoint: ' . $e->getMessage());
+            
+            // Return error response
+            return response()->json([
+                'success' => false,
+                'message' => 'Test transcription failed: ' . $e->getMessage(),
+                'timestamp' => now()->toIso8601String()
+            ], 500);
+        }
+    }
+    
+    /**
+     * Test OpenAI API key
      */
     public function testOpenAIKey(Request $request)
     {
