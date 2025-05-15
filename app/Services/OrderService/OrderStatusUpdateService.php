@@ -327,14 +327,14 @@ class OrderStatusUpdateService extends CoreService
         $systemNotifications = PushNotification::where([
             ['active', 1],
             ['type', 'status']
-        ])->pluck('notification_id')->toArray();
+        ])->pluck('id')->toArray();
 
         $webSockets = [];
 
         /** @var PushNotification $notification */
         $pushNotification = PushNotification::where([
             ['type', 'status'],
-            ['notification_id', $order->status]
+            ['id', $order->status]
         ])->first();
 
         if (!$firebaseTokens || count($firebaseTokens) === 0) {
