@@ -77,7 +77,14 @@ class VoiceOrderController extends Controller
             
             // Process the transcript with user context if available
             $user = Auth::check() ? Auth::user() : null;
-            $orderData = $this->aiOrderService->processOrderIntent($transcription, $user);
+            
+            // Ensure transcription is a string - fixes the "Argument #1 ($transcription) must be of type string" error
+            $transcriptionText = is_array($transcription) ? 
+                ($transcription['transcription'] ?? '') : 
+                (is_string($transcription) ? $transcription : '');
+                
+            // Fix: Pass transcription as string to processOrderIntent
+            $orderData = $this->aiOrderService->processOrderIntent($transcriptionText, $user);
             
             // Get conversation context if this is a follow-up
             $previousContext = $this->getPreviousContext($sessionId);
@@ -86,8 +93,8 @@ class VoiceOrderController extends Controller
             }
 
             // Update log data with input and filters
-            $logData['input'] = $transcription;
-            $logData['request_content'] = $transcription;
+            $logData['input'] = $transcriptionText;
+            $logData['request_content'] = $transcriptionText;
             $logData['filters_detected'] = $orderData;
             $logData['metadata']['order_data'] = $orderData;
 
@@ -106,7 +113,7 @@ class VoiceOrderController extends Controller
             
             // Save context for follow-up questions
             $this->saveConversationContext($sessionId, [
-                'transcription' => $transcription,
+                'transcription' => $transcriptionText,
                 'orderData' => $orderData,
                 'timestamp' => time()
             ]);
@@ -125,7 +132,7 @@ class VoiceOrderController extends Controller
             
             return response()->json([
                 'success' => true, 
-                'transcription' => $transcription,
+                'transcription' => $transcriptionText,
                 'intent_data' => $orderData,
                 'recommendations' => $recommendations,
                 'recommendation_text' => $recommendationText,
