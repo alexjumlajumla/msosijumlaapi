@@ -7,10 +7,12 @@ use App\Services\AIOrderService;
 use App\Services\FoodIntelligenceService;
 use App\Models\User;
 use App\Models\AIAssistantLog;
+use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use Exception;
 
 class VoiceOrderController extends Controller
 {
@@ -800,41 +802,102 @@ class VoiceOrderController extends Controller
     public function getVoiceLog($id)
     {
         try {
-            $log = AIAssistantLog::with('user')->findOrFail($id);
-            
-            // Add additional debug information if available
-            $debugInfo = [
-                'transcription' => $log->input,
-                'response' => $log->output,
-                'successful' => $log->successful,
-                'processing_time_ms' => $log->processing_time_ms,
-                'filters_detected' => $log->filters_detected,
-                'metadata' => $log->metadata,
-                'created_at' => $log->created_at->toDateTimeString(),
-                'user' => $log->user ? [
-                    'id' => $log->user->id,
-                    'name' => $log->user->name,
-                    'email' => $log->user->email,
-                ] : null
-            ];
-            
-            \Log::info('Voice log retrieved', ['log_id' => $id]);
+            $log = AIAssistantLog::with(['user'])->find($id);
+
+            if (!$log) {
+                return response()->json([
+                    'status' => false,
+                    'statusCode' => 'ERROR_404',
+                    'message' => __('errors.ERROR_404')
+                ], 404);
+            }
+
+            // Include recommendations if available
+            if (!empty($log->product_ids) && is_array($log->product_ids)) {
+                $products = Product::whereIn('id', $log->product_ids)
+                    ->with(['translation', 'stocks'])
+                    ->get();
+                $log->recommendations = $products;
+            }
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Success',
+                'data' => $log
+            ]);
+        } catch (Exception $e) {
+            Log::error('Error retrieving voice log', [
+                'log_id' => $id,
+                'error' => $e->getMessage()
+            ]);
             
             return response()->json([
+                'status' => false,
+                'statusCode' => 'SERVER_ERROR',
+                'message' => __('errors.SERVER_ERROR')
+            ], 500);
+        }
+    }
+
+    /**
+     * Transcribe audio file only without processing order intent
+     * This endpoint is specifically for the frontend to transcribe audio files
+     * and is publicly accessible (no auth required)
+     * 
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function transcribe(Request $request)
+    {
+        try {
+            // Log authentication information for debugging
+            \Log::info('Public Transcription request', [
+                'auth_header' => $request->header('Authorization'),
+                'has_file' => $request->hasFile('audio'),
+                'ip' => $request->ip(),
+                'user_agent' => $request->userAgent()
+            ]);
+            
+            // Validate audio file exists
+            if (!$request->hasFile('audio')) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No audio file provided',
+                ], 422);
+            }
+
+            $audioFile = $request->file('audio');
+            $language = $request->input('language', 'en-US');
+            
+            // Log the audio details for debugging
+            \Log::info('Audio file details', [
+                'size' => $audioFile->getSize(),
+                'mime' => $audioFile->getMimeType(),
+                'extension' => $audioFile->extension(),
+                'language' => $language
+            ]);
+            
+            // Just transcribe the audio without further processing
+            $result = $this->transcribeAudio($audioFile, $language);
+            
+            // Return the transcription result
+            return response()->json([
                 'success' => true,
-                'log' => $log,
-                'debug_info' => $debugInfo
+                'text' => $result['transcription'] ?? '',
+                'language' => $language,
+                'confidence' => $result['confidence'] ?? 0,
+                'provider' => 'google_speech'
             ]);
         } catch (\Exception $e) {
-            \Log::error('Error retrieving voice log: ' . $e->getMessage(), [
-                'id' => $id,
-                'exception' => get_class($e)
+            \Log::error('Error in transcribe endpoint: ' . $e->getMessage(), [
+                'trace' => $e->getTraceAsString()
             ]);
             
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to retrieve voice log: ' . $e->getMessage()
-            ], 404);
+                'message' => 'Failed to transcribe audio: ' . $e->getMessage(),
+                'error_code' => $e->getCode()
+            ], 500);
         }
     }
 } 

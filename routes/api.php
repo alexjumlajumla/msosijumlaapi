@@ -45,12 +45,12 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
         ->middleware('sessions');
 
     // Direct voice-order endpoint (no /rest prefix)
-    Route::post('/voice-order', [VoiceOrderController::class, 'processVoiceOrder'])->middleware('throttle:20,1');
-    Route::post('/voice-order/realtime-transcription', [VoiceOrderController::class, 'realtimeTranscription'])->middleware('throttle:30,1');
-    Route::post('/voice-order/repeat', [VoiceOrderController::class, 'repeatOrder'])->middleware('throttle:30,1');
-    Route::post('/voice-order/feedback', [VoiceOrderController::class, 'processFeedback']);
-    Route::get('/voice-order/history', [VoiceOrderController::class, 'getOrderHistory']);
-    Route::get('/voice-order/log/{id}', [VoiceOrderController::class, 'getVoiceLog']);
+    Route::post('/voice-order', [VoiceOrderController::class, 'processVoiceOrder'])->middleware(['throttle:20,1', 'sanctum.check']);
+    Route::post('/voice-order/realtime-transcription', [VoiceOrderController::class, 'realtimeTranscription'])->middleware(['throttle:30,1', 'sanctum.check']);
+    Route::post('/voice-order/repeat', [VoiceOrderController::class, 'repeatOrder'])->middleware(['throttle:30,1', 'sanctum.check']);
+    Route::post('/voice-order/feedback', [VoiceOrderController::class, 'processFeedback'])->middleware('sanctum.check');
+    Route::get('/voice-order/history', [VoiceOrderController::class, 'getOrderHistory'])->middleware('sanctum.check');
+    Route::get('/voice-order/log/{id}', [VoiceOrderController::class, 'getVoiceLog'])->middleware('sanctum.check');
     Route::post('/test-openai-key', [VoiceOrderController::class, 'testOpenAIKey']);
     Route::post('/voice-order/test-transcribe', [VoiceOrderController::class, 'testTranscribe']);
 
@@ -104,13 +104,18 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
         Route::get('default-sms-payload',			[Rest\SettingController::class, 'defaultSmsPayload']);
 
         /* Voice Processing & OpenAI */
-        Route::post('voice-order', [VoiceOrderController::class, 'processVoiceOrder'])->middleware('throttle:20,1');
-        Route::post('voice-order/realtime-transcription', [VoiceOrderController::class, 'realtimeTranscription'])->middleware('throttle:30,1');
-        Route::post('voice-order/repeat', [VoiceOrderController::class, 'repeatOrder'])->middleware('throttle:30,1');
-        Route::post('voice-order/feedback', [VoiceOrderController::class, 'processFeedback']);
-        Route::get('voice-order/history', [VoiceOrderController::class, 'getOrderHistory']);
+        Route::post('voice-order', [VoiceOrderController::class, 'processVoiceOrder'])->middleware(['throttle:20,1', 'sanctum.check']);
+        Route::post('voice-order/realtime-transcription', [VoiceOrderController::class, 'realtimeTranscription'])->middleware(['throttle:30,1', 'sanctum.check']);
+        Route::post('voice-order/repeat', [VoiceOrderController::class, 'repeatOrder'])->middleware(['throttle:30,1', 'sanctum.check']);
+        Route::post('voice-order/feedback', [VoiceOrderController::class, 'processFeedback'])->middleware('sanctum.check');
+        Route::get('voice-order/history', [VoiceOrderController::class, 'getOrderHistory'])->middleware('sanctum.check');
         Route::post('test-openai-key', [VoiceOrderController::class, 'testOpenAIKey']);
-        Route::post('voice-order/test-transcribe', [VoiceOrderController::class, 'testTranscribe']);
+        
+        // Public endpoints for testing and voice transcription - no auth required
+        Route::post('voice-order/test-transcribe', [VoiceOrderController::class, 'testTranscribe'])->middleware('throttle:30,1');
+        
+        // Add the transcribe endpoint specifically for the frontend - no auth required
+        Route::post('voice-order/transcribe', [VoiceOrderController::class, 'transcribe'])->middleware('throttle:30,1');
         Route::match(['GET', 'POST'], 'openai-chat', [OpenAITestController::class, 'testChatCompletion']);
 
         /* Languages */
