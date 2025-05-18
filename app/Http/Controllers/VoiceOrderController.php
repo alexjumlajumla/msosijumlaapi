@@ -1063,12 +1063,12 @@ class VoiceOrderController extends Controller
             $fileName = 'voice-orders/' . auth()->id() . '/' . date('Y-m-d') . '/' . 
                         $sessionId . '-' . time() . '.' . $audioFile->getClientOriginalExtension();
             
-            // Store the file in S3 with public visibility
+            // Store the file in S3 WITHOUT public ACL (let bucket policy handle visibility)
+            // Removed the 'public' visibility parameter which was causing AccessControlListNotSupported error
             $path = Storage::disk('s3')->putFileAs(
                 'voice-orders', 
                 $audioFile, 
-                $fileName, 
-                'public'
+                $fileName
             );
             
             if (!$path) {
@@ -1096,6 +1096,7 @@ class VoiceOrderController extends Controller
                 'original_name' => $audioFile->getClientOriginalName(),
                 'trace' => $e->getTraceAsString()
             ]);
+            // Continue even if S3 upload fails
             return null;
         }
     }
