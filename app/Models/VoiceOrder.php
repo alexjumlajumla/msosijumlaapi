@@ -17,6 +17,19 @@ class VoiceOrder extends Model
      */
     protected $fillable = [
         'user_id',
+        'shop_id',
+        'currency_id',
+        'address_id',
+        'deliveryman_id',
+        'delivery_type',
+        'total_price',
+        'delivery_fee',
+        'tax',
+        'service_fee',
+        'address',
+        'location',
+        'delivery_date',
+        'delivery_time',
         'session_id',
         'transcription_text',
         'intent_data',
@@ -54,6 +67,11 @@ class VoiceOrder extends Model
         'feedback' => 'array',
         'confidence_score' => 'float',
         'score' => 'float',
+        'location' => 'array',
+        'total_price' => 'float',
+        'delivery_fee' => 'float',
+        'tax' => 'float',
+        'service_fee' => 'float',
     ];
 
     /**
@@ -62,6 +80,38 @@ class VoiceOrder extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Get the shop associated with the voice order.
+     */
+    public function shop(): BelongsTo
+    {
+        return $this->belongsTo(Shop::class);
+    }
+
+    /**
+     * Get the currency associated with the voice order.
+     */
+    public function currency(): BelongsTo
+    {
+        return $this->belongsTo(Currency::class);
+    }
+
+    /**
+     * Get the address associated with the voice order.
+     */
+    public function address(): BelongsTo
+    {
+        return $this->belongsTo(UserAddress::class, 'address_id');
+    }
+
+    /**
+     * Get the delivery man assigned to the voice order.
+     */
+    public function deliveryMan(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'deliveryman_id');
     }
 
     /**
