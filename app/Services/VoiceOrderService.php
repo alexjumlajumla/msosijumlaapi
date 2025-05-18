@@ -59,18 +59,25 @@ class VoiceOrderService
             // Check standard paths if still not found
             if (empty($credentialsPath) || !file_exists($credentialsPath)) {
                 $possiblePaths = [
+                    base_path('jumlajumla-1f0f0-98ab02854aef.json'), // Root path with specific filename
+                    storage_path('app/jumlajumla-1f0f0-98ab02854aef.json'), // Storage path with specific filename
                     storage_path('app/google-service-account.json'),
-                    storage_path('app/jumlajumla-1f0f0-98ab02854aef.json'),
-                    base_path('google-credentials.json')
+                    base_path('google-credentials.json'),
+                    base_path('google-service-account.json'),
+                    storage_path('google-credentials.json'),
                 ];
                 
                 foreach ($possiblePaths as $path) {
-                    if (file_exists($path) && is_readable($path)) {
+                    if (file_exists($path)) {
                         $credentialsPath = $path;
-                        \Log::info("Using fallback Google credentials file: $path");
+                        \Log::info("Found Google credentials at: $path");
                         break;
                     }
                 }
+            }
+            
+            if (empty($credentialsPath) || !file_exists($credentialsPath)) {
+                throw new \Exception('Google Speech credentials file not found. Please check your configuration.');
             }
             
             try {

@@ -28,15 +28,17 @@ Your backend already provides these key endpoints for voice processing:
 
 | Endpoint | Method | Description | Authentication |
 |----------|--------|-------------|----------------|
-| `/api/v1/voice-order` | POST | Process voice recordings for order intent | Optional |
+| `/api/v1/voice-order` | POST | Process voice recordings for order intent | Optional* |
 | `/api/v1/voice-order/feedback` | POST | Submit feedback on order recommendations | Required |
 | `/api/v1/voice-order/history` | GET | Get user's voice order history | Required |
 | `/api/v1/voice-order/log/{id}` | GET | Get details of a specific voice order log | Required |
-| `/api/v1/voice-order/realtime-transcription` | POST | Process streaming audio | Required |
+| `/api/v1/voice-order/realtime-transcription` | POST | Process streaming audio | Optional* |
 | `/api/v1/voice-order/repeat` | POST | Repeat a previous order | Required |
 | `/api/v1/voice-order/test-transcribe` | POST | Test speech-to-text without AI processing | None |
-| `/api/v1/voice-order/transcribe` | POST | Transcribe audio to text | Required |
+| `/api/v1/voice-order/transcribe` | POST | Transcribe audio to text | None |
 | `/api/v1/test-openai-key` | POST | Test OpenAI API key configuration | None |
+
+**Note:** *Authentication temporarily disabled for testing purposes
 
 ### Text Chat Endpoints
 
@@ -44,6 +46,15 @@ Your backend already provides these key endpoints for voice processing:
 |----------|--------|-------------|----------------|
 | `/api/v1/ai-chat` | POST | Process text-based food orders | Optional |
 | `/api/v1/ai-chat/context` | POST | Update conversation context | Required |
+
+### Testing & Diagnostic Endpoints
+
+| Endpoint | Method | Description | Authentication |
+|----------|--------|-------------|----------------|
+| `/public/voice-test.html` | GET | Browser-based voice API testing interface | None |
+| `/public/voice-api-test.php?auth=testing` | GET/POST | Direct voice API testing (bypasses middleware) | Query param |
+| `/public/check-openai.php?auth=fixit` | GET | OpenAI API configuration check | Query param |
+| `/public/fix-credentials.php?auth=fixit` | GET | Google Cloud credentials fix | Query param |
 
 ## Frontend Implementation (Next.js)
 

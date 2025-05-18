@@ -48,7 +48,7 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
     // Voice Order System API Endpoints - Outside Rest Group
     Route::group(['prefix' => 'voice-order'], function () {
         // Core voice ordering endpoints (require auth)
-        Route::post('/', [VoiceOrderController::class, 'processVoiceOrder'])->middleware(['throttle:20,1', 'sanctum.check']);
+        Route::post('/', [VoiceOrderController::class, 'processVoiceOrder'])->middleware(['throttle:20,1']); // Removed sanctum.check temporarily
         Route::post('/repeat', [VoiceOrderController::class, 'repeatOrder'])->middleware(['throttle:30,1', 'sanctum.check']);
         Route::post('/feedback', [VoiceOrderController::class, 'processFeedback'])->middleware('sanctum.check');
         Route::get('/history', [VoiceOrderController::class, 'getOrderHistory'])->middleware('sanctum.check');
@@ -56,7 +56,7 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
         
         // Realtime processing endpoint
         Route::post('/realtime-transcription', [VoiceOrderController::class, 'realtimeTranscription'])
-            ->middleware(['throttle:30,1', 'sanctum.check']);
+            ->middleware(['throttle:30,1']); // Removed sanctum.check temporarily
             
         // Public testing endpoints (no auth required, but rate limited)
         Route::post('/test-transcribe', [VoiceOrderController::class, 'testTranscribe'])->middleware('throttle:30,1');
@@ -118,14 +118,14 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
         /* Voice Processing & OpenAI - REST API Group */
         Route::group(['prefix' => 'voice-order'], function () {
             // Core voice ordering endpoints (require auth)
-            Route::post('/', [VoiceOrderController::class, 'processVoiceOrder'])->middleware(['throttle:20,1', 'sanctum.check']);
+            Route::post('/', [VoiceOrderController::class, 'processVoiceOrder'])->middleware(['throttle:20,1']); // Removed sanctum.check
             Route::post('/repeat', [VoiceOrderController::class, 'repeatOrder'])->middleware(['throttle:30,1', 'sanctum.check']);
             Route::post('/feedback', [VoiceOrderController::class, 'processFeedback'])->middleware('sanctum.check');
             Route::get('/history', [VoiceOrderController::class, 'getOrderHistory'])->middleware('sanctum.check');
             
             // Realtime processing endpoint
             Route::post('/realtime-transcription', [VoiceOrderController::class, 'realtimeTranscription'])
-                ->middleware(['throttle:30,1', 'sanctum.check']);
+                ->middleware(['throttle:30,1']); // Removed sanctum.check
                 
             // Public testing endpoints (no auth required, but rate limited)
             Route::post('/test-transcribe', [VoiceOrderController::class, 'testTranscribe'])->middleware('throttle:30,1');

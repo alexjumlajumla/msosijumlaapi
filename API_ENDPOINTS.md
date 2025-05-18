@@ -482,4 +482,172 @@ This document contains all API endpoints available in the application.
 |--------|----------|-------------|
 | POST | `/api/v1/vfd/receipts/generate` | Generate a new fiscal receipt |
 | GET | `/api/v1/vfd/receipts/{id}` | Get receipt by ID |
-| GET | `/api/v1/vfd/receipts` | Get all receipts | 
+| GET | `/api/v1/vfd/receipts` | Get all receipts |
+
+# Voice Order API Endpoints Documentation
+
+## Voice Processing Endpoints
+
+| Endpoint | Method | Description | Authentication | Rate Limiting |
+|----------|--------|-------------|----------------|---------------|
+| `/api/v1/voice-order` | POST | Process voice recordings for order intent | Optional* | 20 requests/minute |
+| `/api/v1/voice-order/repeat` | POST | Repeat a previous order | Required | 30 requests/minute |
+| `/api/v1/voice-order/realtime-transcription` | POST | Process streaming audio | Optional* | 30 requests/minute |
+| `/api/v1/voice-order/feedback` | POST | Submit feedback on order recommendations | Required | None |
+| `/api/v1/voice-order/history` | GET | Get user's voice order history | Required | None |
+| `/api/v1/voice-order/log/{id}` | GET | Get specific voice order log | Required | None |
+| `/api/v1/voice-order/test-transcribe` | POST | Test speech-to-text without AI processing | None | 30 requests/minute |
+| `/api/v1/voice-order/transcribe` | POST | Transcribe audio to text | None | 30 requests/minute |
+
+**Note:** *Authentication currently disabled for testing
+
+## Text-based AI Chat Endpoints
+
+| Endpoint | Method | Description | Authentication |
+|----------|--------|-------------|----------------|
+| `/api/v1/ai-chat` | POST | Process text-based food orders | Required |
+| `/api/v1/ai-chat/context` | POST | Update conversation context | Required |
+
+## Service Test Endpoints
+
+| Endpoint | Method | Description | Authentication |
+|----------|--------|-------------|----------------|
+| `/api/v1/test-openai-key` | POST | Test OpenAI API key | None |
+| `/api/v1/openai-chat` | GET/POST | Test OpenAI chat completion | None |
+| `/public/voice-api-test.php?auth=testing` | GET/POST | Direct voice API testing | Query param `auth=testing` |
+| `/public/voice-test.html` | GET | Voice API test interface | None |
+
+## Diagnostic Endpoints
+
+| Endpoint | Method | Description | Authentication |
+|----------|--------|-------------|----------------|
+| `/public/check-openai.php?auth=fixit` | GET | Check OpenAI API configuration | Query param `auth=fixit` |
+| `/public/fix-credentials.php?auth=fixit` | GET | Fix Google credentials | Query param `auth=fixit` |
+| `/public/clear-cache.php?auth=fixit` | GET | Clear Laravel cache | Query param `auth=fixit` |
+| `/public/google-check.php` | GET | Check Google credentials status | None |
+
+## Request/Response Reference
+
+### Voice Order Processing
+
+**Request:**
+```json
+{
+  "audio": "base64_encoded_audio_data",
+  "audio_format": "wav",  // optional, defaults to wav
+  "language": "en-US",    // optional, defaults to en-US
+  "user_id": 123,         // optional if authenticated
+  "context": {            // optional context information
+    "previous_orders": [],
+    "preferences": {}
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Voice processed successfully",
+  "data": {
+    "transcription": "I want to order a cheeseburger with fries",
+    "confidence": 0.95,
+    "recommendations": [
+      {
+        "product_id": 101,
+        "product_name": "Cheeseburger",
+        "shop_id": 5,
+        "shop_name": "Burger Place",
+        "quantity": 1,
+        "confidence": 0.92
+      },
+      {
+        "product_id": 205,
+        "product_name": "French Fries",
+        "shop_id": 5,
+        "shop_name": "Burger Place",
+        "quantity": 1,
+        "confidence": 0.85
+      }
+    ],
+    "ai_suggestions": "Would you like to add a drink to your order?",
+    "log_id": 456
+  }
+}
+```
+
+### Voice Transcription Only
+
+**Request:**
+```json
+{
+  "audio": "base64_encoded_audio_data",
+  "audio_format": "wav",  // optional
+  "language": "en-US"     // optional
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "transcription": "I want to order a cheeseburger with fries",
+  "confidence": 0.95
+}
+```
+
+### AI Chat Processing
+
+**Request:**
+```json
+{
+  "message": "I want to order a cheeseburger with fries",
+  "user_id": 123,         // optional if authenticated
+  "context": {            // optional context
+    "previous_messages": [],
+    "preferences": {}
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Chat processed successfully",
+  "data": {
+    "ai_response": "I'll help you order a cheeseburger with fries. Would you like to add a drink?",
+    "recommendations": [
+      {
+        "product_id": 101,
+        "product_name": "Cheeseburger",
+        "shop_id": 5,
+        "shop_name": "Burger Place",
+        "quantity": 1
+      },
+      {
+        "product_id": 205,
+        "product_name": "French Fries",
+        "shop_id": 5, 
+        "shop_name": "Burger Place",
+        "quantity": 1
+      }
+    ],
+    "log_id": 789
+  }
+}
+```
+
+## Test Endpoints Usage
+
+### Voice Test HTML Form
+Access `/public/voice-test.html` in your browser to:
+- Record audio directly from your browser
+- Upload audio files for processing
+- Test the transcription service without authentication
+
+### Direct Voice API Testing
+Access `/public/voice-api-test.php?auth=testing` to:
+- Check the status of voice API services
+- See detailed credential information
+- Test audio transcription directly 

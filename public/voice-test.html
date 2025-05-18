@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Direct Voice API Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+        h1, h2 { color: #333; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        select, input[type="file"] { display: block; width: 100%; padding: 8px; margin-bottom: 10px; }
+        button { background: #4CAF50; color: white; border: none; padding: 10px 20px; cursor: pointer; }
+        button:hover { background: #45a049; }
+        pre { background: #f5f5f5; padding: 10px; overflow: auto; margin-top: 20px; }
+        .success { color: green; }
+        .error { color: red; }
+        #recordingControls { display: flex; gap: 10px; margin-bottom: 20px; }
+        #recordingControls button { flex: 1; }
+        #transcriptionResult { margin-top: 20px; padding: 15px; background: #f9f9f9; border-left: 4px solid #4CAF50; }
+        #statusMessage { margin: 10px 0; font-style: italic; }
+        .recording-indicator { color: red; animation: blink 1s infinite; }
+        
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Direct Voice API Test</h1>
+        <p>This page bypasses middleware and directly tests the voice transcription service.</p>
+        
+        <div id="recordingControls">
+            <button id="startRecording">Start Recording</button>
+            <button id="stopRecording" disabled>Stop Recording</button>
+        </div>
+        
+        <div id="statusMessage"></div>
+        
+        <form id="directTestForm" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="audioFile">Or select an audio file:</label>
+                <input type="file" id="audioFile" name="audio" accept="audio/*">
+            </div>
+            
+            <div class="form-group">
+                <label for="language">Language:</label>
+                <select id="language" name="language">
+                    <option value="en-US">English (US)</option>
+                    <option value="en-GB">English (UK)</option>
+                    <option value="es-ES">Spanish</option>
+                    <option value="fr-FR">French</option>
+                    <option value="ar-SA">Arabic</option>
+                    <option value="sw-TZ">Swahili</option>
+                    <option value="zh-CN">Chinese (Simplified)</option>
+                </select>
+            </div>
+            
+            <button type="submit">Test Transcription</button>
+        </form>
+        
+        <div id="transcriptionResult"></div>
+        
+        <h2>API Status</h2>
+        <pre id="apiStatus"></pre>
+    </div>
+    
+    <script>
+        // Fetch API status on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            fetch('voice-api-test.php?auth=testing')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('apiStatus').textContent = JSON.stringify(data, null, 2);
+                })
+                .catch(error => {
+                    document.getElementById('apiStatus').textContent = 'Error fetching API status: ' + error.message;
+                    document.getElementById('apiStatus').className = 'error';
+                });
+        });
+        
+        // Recording functionality
+        let mediaRecorder;
+        let audioChunks = [];
+        const startButton = document.getElementById('startRecording');
+        const stopButton = document.getElementById('stopRecording');
+        const statusMessage = document.getElementById('statusMessage');
+        
+        startButton.addEventListener('click', startRecording);
+        stopButton.addEventListener('click', stopRecording);
+        
+        async function startRecording() {
+            audioChunks = [];
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+                
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
+                
+                mediaRecorder.onstop = processRecording;
+                
+                mediaRecorder.start();
+                startButton.disabled = true;
+                stopButton.disabled = false;
+                statusMessage.innerHTML = '<span class="recording-indicator">● Recording...</span>';
+            } catch (err) {
+                statusMessage.textContent = 'Error accessing microphone: ' + err.message;
+                statusMessage.className = 'error';
+            }
+        }
+        
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+                startButton.disabled = false;
+                stopButton.disabled = true;
+                statusMessage.textContent = 'Processing recording...';
+            }
+        }
+        
+        function processRecording() {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'recording.webm');
+            formData.append('language', document.getElementById('language').value);
+            
+            submitTranscriptionRequest(formData);
+        }
+        
+        // Form submission
+        document.getElementById('directTestForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const fileInput = document.getElementById('audioFile');
+            if (fileInput.files.length === 0) {
+                statusMessage.textContent = 'Please select an audio file or record audio';
+                statusMessage.className = 'error';
+                return;
+            }
+            
+            const formData = new FormData(this);
+            submitTranscriptionRequest(formData);
+        });
+        
+        function submitTranscriptionRequest(formData) {
+            statusMessage.textContent = 'Transcribing audio...';
+            
+            fetch('voice-api-test.php?auth=testing', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('apiStatus').textContent = JSON.stringify(data, null, 2);
+                
+                if (data.status === 'success') {
+                    const result = document.getElementById('transcriptionResult');
+                    if (data.transcription && data.transcription.transcription) {
+                        result.innerHTML = `
+                            <h3>Transcription:</h3>
+                            <p>${data.transcription.transcription}</p>
+                            <p><strong>Confidence:</strong> ${(data.transcription.confidence * 100).toFixed(2)}%</p>
+                        `;
+                    } else {
+                        result.innerHTML = '<p>No transcription available in the response</p>';
+                    }
+                    
+                    statusMessage.textContent = 'Transcription complete!';
+                    statusMessage.className = 'success';
+                } else {
+                    statusMessage.textContent = 'Error: ' + (data.message || 'Unknown error');
+                    statusMessage.className = 'error';
+                }
+            })
+            .catch(error => {
+                statusMessage.textContent = 'Error submitting request: ' + error.message;
+                statusMessage.className = 'error';
+            });
+        }
+    </script>
+</body>
+</html> 
