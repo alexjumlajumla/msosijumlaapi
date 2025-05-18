@@ -44,17 +44,28 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
     Route::post('/verify/otp',                          [VerifyAuthController::class, 'verifyOTP'])
         ->middleware('sessions');
 
-    // Direct voice-order endpoint (no /rest prefix)
-    Route::post('/voice-order', [VoiceOrderController::class, 'processVoiceOrder'])->middleware(['throttle:20,1', 'sanctum.check']);
-    Route::post('/voice-order/realtime-transcription', [VoiceOrderController::class, 'realtimeTranscription'])->middleware(['throttle:30,1', 'sanctum.check']);
-    Route::post('/voice-order/repeat', [VoiceOrderController::class, 'repeatOrder'])->middleware(['throttle:30,1', 'sanctum.check']);
-    Route::post('/voice-order/feedback', [VoiceOrderController::class, 'processFeedback'])->middleware('sanctum.check');
-    Route::get('/voice-order/history', [VoiceOrderController::class, 'getOrderHistory'])->middleware('sanctum.check');
-    Route::get('/voice-order/log/{id}', [VoiceOrderController::class, 'getVoiceLog'])->middleware('sanctum.check');
+    // Voice Order System API Endpoints - Outside Rest Group
+    Route::group(['prefix' => 'voice-order'], function () {
+        // Core voice ordering endpoints (require auth)
+        Route::post('/', [VoiceOrderController::class, 'processVoiceOrder'])->middleware(['throttle:20,1', 'sanctum.check']);
+        Route::post('/repeat', [VoiceOrderController::class, 'repeatOrder'])->middleware(['throttle:30,1', 'sanctum.check']);
+        Route::post('/feedback', [VoiceOrderController::class, 'processFeedback'])->middleware('sanctum.check');
+        Route::get('/history', [VoiceOrderController::class, 'getOrderHistory'])->middleware('sanctum.check');
+        Route::get('/log/{id}', [VoiceOrderController::class, 'getVoiceLog'])->middleware('sanctum.check');
+        
+        // Realtime processing endpoint
+        Route::post('/realtime-transcription', [VoiceOrderController::class, 'realtimeTranscription'])
+            ->middleware(['throttle:30,1', 'sanctum.check']);
+            
+        // Public testing endpoints (no auth required, but rate limited)
+        Route::post('/test-transcribe', [VoiceOrderController::class, 'testTranscribe'])->middleware('throttle:30,1');
+        Route::post('/transcribe', [VoiceOrderController::class, 'transcribe'])->middleware('throttle:30,1');
+    });
+    
+    // API key testing endpoint
     Route::post('/test-openai-key', [VoiceOrderController::class, 'testOpenAIKey']);
-    Route::post('/voice-order/test-transcribe', [VoiceOrderController::class, 'testTranscribe']);
-
-    // OpenAI Testing
+    
+    // OpenAI chat test endpoint
     Route::match(['GET', 'POST'], '/openai-chat', [OpenAITestController::class, 'testChatCompletion']);
 
     Route::post('/auth/resend-verify',                  [VerifyAuthController::class, 'resendVerify'])
@@ -103,20 +114,26 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
         Route::get('stat',                          [Rest\SettingController::class, 'stat']);
         Route::get('default-sms-payload',			[Rest\SettingController::class, 'defaultSmsPayload']);
 
-        /* Voice Processing & OpenAI */
-        Route::post('voice-order', [VoiceOrderController::class, 'processVoiceOrder'])->middleware(['throttle:20,1', 'sanctum.check']);
-        Route::post('voice-order/realtime-transcription', [VoiceOrderController::class, 'realtimeTranscription'])->middleware(['throttle:30,1', 'sanctum.check']);
-        Route::post('voice-order/repeat', [VoiceOrderController::class, 'repeatOrder'])->middleware(['throttle:30,1', 'sanctum.check']);
-        Route::post('voice-order/feedback', [VoiceOrderController::class, 'processFeedback'])->middleware('sanctum.check');
-        Route::get('voice-order/history', [VoiceOrderController::class, 'getOrderHistory'])->middleware('sanctum.check');
-        Route::post('test-openai-key', [VoiceOrderController::class, 'testOpenAIKey']);
+        /* Voice Processing & OpenAI - REST API Group */
+        Route::group(['prefix' => 'voice-order'], function () {
+            // Core voice ordering endpoints (require auth)
+            Route::post('/', [VoiceOrderController::class, 'processVoiceOrder'])->middleware(['throttle:20,1', 'sanctum.check']);
+            Route::post('/repeat', [VoiceOrderController::class, 'repeatOrder'])->middleware(['throttle:30,1', 'sanctum.check']);
+            Route::post('/feedback', [VoiceOrderController::class, 'processFeedback'])->middleware('sanctum.check');
+            Route::get('/history', [VoiceOrderController::class, 'getOrderHistory'])->middleware('sanctum.check');
+            
+            // Realtime processing endpoint
+            Route::post('/realtime-transcription', [VoiceOrderController::class, 'realtimeTranscription'])
+                ->middleware(['throttle:30,1', 'sanctum.check']);
+                
+            // Public testing endpoints (no auth required, but rate limited)
+            Route::post('/test-transcribe', [VoiceOrderController::class, 'testTranscribe'])->middleware('throttle:30,1');
+            Route::post('/transcribe', [VoiceOrderController::class, 'transcribe'])->middleware('throttle:30,1');
+        });
         
-        // Public endpoints for testing and voice transcription - no auth required
-        Route::post('voice-order/test-transcribe', [VoiceOrderController::class, 'testTranscribe'])->middleware('throttle:30,1');
-        
-        // Add the transcribe endpoint specifically for the frontend - no auth required
-        Route::post('voice-order/transcribe', [VoiceOrderController::class, 'transcribe'])->middleware('throttle:30,1');
-        Route::match(['GET', 'POST'], 'openai-chat', [OpenAITestController::class, 'testChatCompletion']);
+        // OpenAI testing endpoints
+        Route::post('/test-openai-key', [VoiceOrderController::class, 'testOpenAIKey']);
+        Route::match(['GET', 'POST'], '/openai-chat', [OpenAITestController::class, 'testChatCompletion']);
 
         /* Languages */
         Route::get('languages/default',             [Rest\LanguageController::class, 'default']);
@@ -1819,85 +1836,8 @@ Route::get('/test-openai', function() {
     }
 });
 
-// Update the voice-test-api route
-Route::post('/api/voice-test-api', function() {
-    try {
-        $request = request();
-        $audioFile = $request->file('audio');
-        $language = $request->input('language', 'en-US');
-        
-        if (!$audioFile) {
-            return response()->json([
-                'success' => false,
-                'message' => 'No audio file provided'
-            ], 400);
-        }
-        
-        // First process with Google Speech-to-Text
-        $voiceController = app(App\Http\Controllers\VoiceOrderController::class);
-        $transcriptionResult = $voiceController->transcribeAudio($audioFile, $language);
-        
-        if (!isset($transcriptionResult['text']) || empty($transcriptionResult['text'])) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to transcribe audio',
-                'transcription_error' => $transcriptionResult['error'] ?? 'Unknown error'
-            ], 500);
-        }
-        
-        // Then process with OpenAI for understanding
-        try {
-            $apiKey = config('services.openai.api_key');
-            $openAi = new Orhanerday\OpenAi\OpenAi($apiKey);
-            
-            // Use chat API with the new package format
-            $response = $openAi->chat([
-                'model' => 'gpt-3.5-turbo',
-                'messages' => [
-                    [
-                        'role' => 'system',
-                        'content' => 'You are a helpful assistant for a food ordering system. Extract key food items, quantities, and special instructions from the user\'s voice transcription.'
-                    ],
-                    [
-                        'role' => 'user',
-                        'content' => $transcriptionResult['text']
-                    ]
-                ],
-                'temperature' => 0.7,
-                'max_tokens' => 150
-            ]);
-            
-            $openAiResult = json_decode($response, true);
-            
-            return response()->json([
-                'success' => true,
-                'transcription' => $transcriptionResult['text'],
-                'openai_analysis' => $openAiResult,
-                'language' => $language
-            ]);
-        } catch (\Exception $openAiError) {
-            return response()->json([
-                'success' => false,
-                'message' => 'OpenAI processing failed',
-                'transcription' => $transcriptionResult['text'],
-                'error' => $openAiError->getMessage()
-            ], 500);
-        }
-        
-    } catch (\Exception $e) {
-        \Log::error('Voice test failed: ' . $e->getMessage(), [
-            'trace' => $e->getTraceAsString()
-        ]);
-        
-        return response()->json([
-            'success' => false,
-            'message' => 'Voice test failed: ' . $e->getMessage(),
-            'error' => $e->getMessage(),
-            'file' => $e->getFile(),
-            'line' => $e->getLine()
-        ], 500);
-    }
-});
+// Voice test API route is now defined in routes/voice_test.php
+// Removed duplicate implementation here to avoid conflicts
 
 // Add a simple OpenAI test endpoint
 Route::get('/test-openai-integration', [OpenAITestController::class, 'testChatCompletion']);

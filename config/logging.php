@@ -50,7 +50,7 @@ return [
     'channels' => [
         'stack' => [
             'driver' => 'stack',
-            'channels' => ['single'],
+            'channels' => ['daily'],
             'ignore_exceptions' => false,
         ],
 
@@ -63,8 +63,9 @@ return [
         'daily' => [
             'driver' => 'daily',
             'path' => storage_path('logs/laravel.log'),
-            'level' => env('LOG_LEVEL', 'debug'),
-            'days' => 14,
+            'level' => env('LOG_LEVEL', 'info'),
+            'days' => 7,
+            'permission' => 0664,
         ],
 
         'slack' => [
@@ -118,6 +119,27 @@ return [
             'driver' => 'single',
             'path' => storage_path('logs/paytabs.log'),
             'level' => 'info',
+        ],
+        
+        'firebase' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/firebase.log'),
+            'level' => 'info',
+            'days' => 5,
+        ],
+        
+        'orders' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/orders.log'),
+            'level' => 'info',
+            'days' => 5,
+        ],
+        
+        'payments' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/payments.log'),
+            'level' => 'info',
+            'days' => 5,
         ],
     ],
 

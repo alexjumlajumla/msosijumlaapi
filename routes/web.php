@@ -72,10 +72,6 @@ Route::get('/', function () {
     return view('welcome');
 });
 
-// Alternative voice order API endpoints for failover access
-Route::post('/voice-order/test-transcribe', [App\Http\Controllers\VoiceOrderController::class, 'testTranscribe']);
-Route::post('/voice-api-test', [App\Http\Controllers\VoiceOrderController::class, 'testTranscribe']);
-
 Route::get('convert', [ConvertController::class, 'index'])->name('convert');
 Route::post('convert-post', [ConvertController::class, 'getFile'])->name('convertPost');
 

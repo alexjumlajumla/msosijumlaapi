@@ -3,7 +3,15 @@
 use App\Http\Controllers\VoiceOrderController;
 use Illuminate\Support\Facades\Route;
 
-// Standalone voice-test endpoint for frontend testing
+/**
+ * Voice Order System - Test API Endpoint
+ * 
+ * This standalone endpoint provides a simple way to test the voice order functionality
+ * without requiring authentication. It performs both speech-to-text transcription
+ * and intent analysis in a single request.
+ * 
+ * Used by: public/voice-test/index.html
+ */
 Route::post('/api/voice-test-api', function() {
     try {
         $request = request();
@@ -17,7 +25,7 @@ Route::post('/api/voice-test-api', function() {
             ], 400);
         }
         
-        // First process with Google Speech-to-Text
+        // Step 1: Process audio with Google Speech-to-Text
         $voiceController = app(VoiceOrderController::class);
         $transcriptionResult = $voiceController->transcribeAudio($audioFile, $language);
         
@@ -29,7 +37,7 @@ Route::post('/api/voice-test-api', function() {
             ], 500);
         }
         
-        // Then process with OpenAI for understanding
+        // Step 2: Process with OpenAI for intent understanding
         try {
             $apiKey = config('services.openai.api_key');
             $openAi = new Orhanerday\OpenAi\OpenAi($apiKey);

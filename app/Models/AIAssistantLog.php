@@ -38,7 +38,10 @@ class AIAssistantLog extends Model
         'was_helpful',
         'feedback_comment',
         'session_id',
-        'feedback'
+        'feedback',
+        'audio_url',
+        'audio_format',
+        'audio_stored'
     ];
 
     /**
@@ -54,7 +57,8 @@ class AIAssistantLog extends Model
         'product_ids' => 'array',
         'metadata' => 'array',
         'processing_time_ms' => 'integer',
-        'feedback' => 'array'
+        'feedback' => 'array',
+        'audio_stored' => 'boolean'
     ];
 
     /**

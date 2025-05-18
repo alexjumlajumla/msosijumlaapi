@@ -34,7 +34,7 @@ class LoanResource extends JsonResource
             'deleted_at' => $this->when($this->deleted_at, $this->deleted_at?->format('Y-m-d H:i:s') . 'Z'),
 
             // Relations
-            'vendor' => UserResource::make($this->whenLoaded('vendor')),
+            'user' => UserResource::make($this->whenLoaded('user')),
             'disbursed_by_user' => UserResource::make($this->whenLoaded('disbursedBy')),
             'repayments' => LoanRepaymentResource::collection($this->whenLoaded('repayments')),
         ];

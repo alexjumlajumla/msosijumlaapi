@@ -289,88 +289,65 @@ class OrderStatusUpdateService extends CoreService
             $sellerToken = $order->shop?->seller?->firebase_token;
         }
 
-        $firebaseTokens = array_merge(
-            !empty($userToken) && is_array($userToken)              ? $userToken        : [],
-            !empty($deliveryManToken) && is_array($deliveryManToken)      ? $deliveryManToken : [],
-            !empty($sellerToken) && is_array($sellerToken)          ? $sellerToken      : [],
-        );
+        $title = '';
+        $body  = '';
 
-        if (!$firebaseTokens || count($firebaseTokens) === 0) {
-            return [
-                'status' => true,
-                'code'   => ResponseError::NO_ERROR,
-                'data'   => $order
-            ];
+        $language = data_get(Language::languagesList()->where('default', 1)->first(), 'locale');
+
+        $tStatus = Translation::where([
+            ['key', "order_status_$status"],
+            ['locale', $language]
+        ])->first()?->value;
+
+        $tStatus = $tStatus ?: $status;
+
+        // Send notification to the user about order status change
+        if ($order->user && $userToken) {
+            $title = "Order #$order->id";
+            $body  = "Your order #$order->id has been $tStatus";
+
+            $this->sendStatusNotification($order, $status, $title, $body);
         }
 
-        // Get translation for current language
-        $default = data_get(Language::languagesList()->where('default', 1)->first(), 'locale');
-        
-        // Get status title translation
-        $statusTitle = Translation::where(function ($q) use ($default) {
-            $q->where('locale', $this->language)->orWhere('locale', $default);
-        })
-        ->where('key', $order->status)
-        ->first()?->value;
-        
-        $title = 'Your order status has been updated';
-        $body = 'Order #' . $order->id . ' status is now: ' . ($statusTitle ?: $order->status);
-        
-        // Custom translations if available
-        $titleTrans = Translation::where(function ($q) use ($default) {
-            $q->where('locale', $this->language)->orWhere('locale', $default);
-        })
-        ->where('key', 'delivery_title')
-        ->first();
-        
-        $bodyTrans = Translation::where(function ($q) use ($default) {
-            $q->where('locale', $this->language)->orWhere('locale', $default);
-        })
-        ->where('key', 'delivery_body')
-        ->first();
-        
-        if ($titleTrans) {
-            $title = $titleTrans->value;
-        }
-        
-        if ($bodyTrans) {
-            $body = $bodyTrans->value;
-            $body = str_replace("{code}", "#" . $order->id, $body);
-            $body = str_replace("{status}", $statusTitle ?: $order->status, $body);
-        }
+        // Send notification to the deliveryman about order status change
+        if ($deliveryManToken) {
+            $title = "Order #$order->id";
+            $body  = "Order #$order->id status changed to $tStatus";
 
-        $user = auth('sanctum')->user();
-        $userRole = $user->hasRole('deliveryman') ? 'deliveryman' : 'users';
-        $webSockets = [
-            'order' => $order->id,
-            'status' => $order->status,
-        ];
-
-        if ($userRole == 'deliveryman' && $user->id == $order->deliveryman?->id) {
             $data = [
                 'title' => $title,
                 'body' => $body,
-                'type' => PushNotification::STATUS_CHANGED . "-deliveryman",
+                'type' => PushNotification::STATUS_CHANGED,
                 'id' => $order->id,
                 'order' => $order,
             ];
 
-            $userOrder = (new NotificationHelper)->deliveryManOrder($order, 'deliveryman');
-
-            $this->sendFirebaseNotification($firebaseTokens, $title, $body, $data, $webSockets, $userOrder);
+            $this->sendNotification(
+                is_array($deliveryManToken) ? $deliveryManToken : [$deliveryManToken],
+                $data,
+                [$order->deliveryman?->id]
+            );
         }
 
-        $data = [
-            'title' => $title,
-            'body' => $body,
-            'type' => PushNotification::STATUS_CHANGED . "-user",
-            'id' => $order->id,
-            'order' => $order,
-        ];
+        // Send notification to the seller about order status change
+        if ($sellerToken) {
+            $title = "Order #$order->id";
+            $body  = "Order #$order->id status changed to $tStatus";
 
-        $userOrder = (new NotificationHelper)->deliveryManOrder($order, 'user');
+            $data = [
+                'title' => $title,
+                'body' => $body,
+                'type' => PushNotification::STATUS_CHANGED,
+                'id' => $order->id,
+                'order' => $order,
+            ];
 
-        $this->sendFirebaseNotification($firebaseTokens, $title, $body, $data, $webSockets, $userOrder);
+            $this->sendNotification(
+                is_array($sellerToken) ? $sellerToken : [$sellerToken],
+                $data,
+                [$order->shop?->seller?->id]
+            );
+        }
 
         return [
             'status' => true,
@@ -429,6 +406,74 @@ class OrderStatusUpdateService extends CoreService
             // Just log errors but don't interrupt the main process
             Log::error("Error completing trip location for order #{$order->id}: " . $e->getMessage(), [
                 'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
+
+    private function sendStatusNotification(Order $order, string $status, string $title, string $body)
+    {
+        try {
+            $firebaseTokens = [];
+            $userIds = [];
+
+            // Check if user has a valid firebase token and collect it
+            if ($order->user && !empty($order->user->firebase_token)) {
+                if (is_array($order->user->firebase_token)) {
+                    foreach ($order->user->firebase_token as $token) {
+                        if (!empty($token)) {
+                            $firebaseTokens[] = $token;
+                        }
+                    }
+                } elseif (is_string($order->user->firebase_token) && !empty($order->user->firebase_token)) {
+                    $firebaseTokens[] = $order->user->firebase_token;
+                }
+                
+                if (!empty($firebaseTokens)) {
+                    $userIds[] = $order->user->id;
+                }
+            }
+
+            // If no tokens found, log it but don't return
+            if (empty($firebaseTokens)) {
+                \Log::channel('orders')->warning('No valid firebase tokens found for order #' . $order->id . ' user #' . ($order->user_id ?? 'null'));
+            } else {
+                // Prepare notification data
+                $notificationData = [
+                    'id' => $order->id,
+                    'status' => $status,
+                    'type' => PushNotification::STATUS_CHANGED,
+                    'title' => $title,
+                    'body' => $body,
+                    'order' => [
+                        'id' => $order->id,
+                        'status' => $status
+                    ]
+                ];
+
+                // Send notification
+                $this->sendNotification(
+                    $firebaseTokens,
+                    $notificationData,
+                    $userIds
+                );
+                
+                // Always store in database for later reference
+                foreach ($userIds as $userId) {
+                    PushNotification::create([
+                        'user_id' => $userId,
+                        'type' => PushNotification::STATUS_CHANGED,
+                        'title' => (string)$order->id,
+                        'body' => $body,
+                        'data' => $notificationData
+                    ]);
+                }
+                
+                \Log::channel('orders')->info('Notification sent for order #' . $order->id . ' status: ' . $status);
+            }
+        } catch (\Throwable $e) {
+            \Log::channel('orders')->error('Failed to send notification: ' . $e->getMessage(), [
+                'order_id' => $order->id,
+                'status' => $status
             ]);
         }
     }

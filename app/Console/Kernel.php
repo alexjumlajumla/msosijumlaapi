@@ -31,7 +31,6 @@ class Kernel extends ConsoleKernel
 			->at('03:00')  // Run at 3 AM
 			->withoutOverlapping()
 			->appendOutputTo(storage_path('logs/firebase-cleanup.log'));
-		$schedule->command('credit-score:recalculate')->daily();
 	}
 
 	/**

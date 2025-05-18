@@ -27,7 +27,6 @@ class VfdReceiptResource extends JsonResource
             'customer_phone' => $this->customer_phone,
             'customer_email' => $this->customer_email,
             'status' => $this->status,
-            'order_number' => $this->when(class_basename($this->model_type) === 'Order', optional($this->model)->order_number),
             'error_message' => $this->when($this->error_message, $this->error_message),
             'created_at' => $this->created_at?->format('Y-m-d H:i:s'),
             'updated_at' => $this->updated_at?->format('Y-m-d H:i:s'),

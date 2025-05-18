@@ -132,27 +132,24 @@ class PaymentToPartnerService extends CoreService
 	 */
 	private function addForSeller(Order $order, User $seller, Payment $payment): void
     {
-		// Business rule: Seller receives order subtotal minus admin commission.
-		//  - Subtotal is the sum of order item prices (incl. tax where applicable).
-		//  - We intentionally do NOT subtract coupon amount or customer point redemptions,
-		//    those marketing costs are borne by the platform, not the seller.
-		//  - Delivery/service/waiter fees are also excluded here because they are not part
-		//    of the item revenue.
-		
+		// Calculate base price from order details
 		$subtotal = $order->orderDetails->sum('total_price');
 
-		// Include shop-level tax in seller revenue because the seller is responsible
-		// for remitting this tax; commission is calculated on pre-tax subtotal.
-		$shopTax  = max($subtotal / 100 * $order->shop?->tax, 0);
+		// Add shop tax
+		$shopTax = max($subtotal / 100 * $order->shop?->tax, 0);
 		$subtotal += $shopTax;
 
-		$sellerPrice = $subtotal - $order->commission_fee;
-
-		// Guard: never send negative or zero payouts
-		if ($sellerPrice <= 0) {
-			// Nothing to pay out – exit early.
-			return;
+		// Handle coupon deduction only if it's for total price
+		$couponDeduction = 0;
+		if ($order->coupon && $order->coupon->for === 'total_price') {
+			$couponDeduction = $order->coupon->price;
 		}
+
+		// Calculate seller's earning
+		$sellerPrice = $subtotal 
+			- $order->commission_fee 
+			- $couponDeduction
+			- $order->pointHistories->sum('price');
 
 		if ($payment->tag === 'wallet') {
 			(new WalletHistoryService)->create([

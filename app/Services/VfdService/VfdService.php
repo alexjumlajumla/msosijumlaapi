@@ -4,6 +4,9 @@ namespace App\Services\VfdService;
 
 use App\Models\VfdReceipt;
 use App\Services\CoreService;
+use App\Models\SmsPayload;
+use App\Services\SMSGatewayService\MobishastraService;
+use App\Services\SMSGatewayService\TwilioService;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Exception;
@@ -151,14 +154,32 @@ class VfdService extends CoreService
         try {
             $message = "Your fiscal receipt is ready. View it here: {$receipt->receipt_url}";
             
-            // Use existing SMS service
-            $smsGateway = \App\Models\SmsGateway::where('active', 1)->first();
-            if ($smsGateway) {
-                // Implement SMS sending logic here using your existing SMS gateway
-                // This should match your current SMS implementation
+            // Use active SMS gateway
+            $smsPayload = SmsPayload::where('default', 1)->first();
+            
+            if (!$smsPayload) {
+                Log::warning('No default SMS gateway configured for sending receipt SMS');
+                return;
+            }
+            
+            $phone = $receipt->customer_phone;
+            
+            // Send SMS based on the active SMS gateway
+            $result = match ($smsPayload->type) {
+                SmsPayload::MOBISHASTRA => (new MobishastraService)->sendSms($phone, $message),
+                SmsPayload::FIREBASE => (new TwilioService)->sendSms($phone, null, $smsPayload, $message),
+                SmsPayload::TWILIO => (new TwilioService)->sendSms($phone, null, $smsPayload, $message),
+                default => ['status' => false, 'message' => 'Invalid SMS gateway type']
+            };
+            
+            if (!data_get($result, 'status')) {
+                Log::error('Failed to send receipt SMS: ' . data_get($result, 'message'));
             }
         } catch (Exception $e) {
-            Log::error('Failed to send receipt SMS: ' . $e->getMessage());
+            Log::error('Failed to send receipt SMS: ' . $e->getMessage(), [
+                'receipt_id' => $receipt->id,
+                'trace' => $e->getTraceAsString()
+            ]);
         }
     }
 } 

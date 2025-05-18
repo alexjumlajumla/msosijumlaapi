@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice Processing Test</title>
+    <title>Voice Order System Test</title>
     <!-- Meta tag to prevent caching -->
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
@@ -132,12 +132,113 @@
             overflow-x: auto;
             color: #334155;
         }
+        .real-time-transcript {
+            background-color: #f0f9ff;
+            border-left: 4px solid #2563eb;
+            padding: 10px 15px;
+            margin-top: 15px;
+            font-style: italic;
+        }
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 16px;
+            margin-top: 20px;
+        }
+        .product-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .product-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px rgba(0,0,0,0.1);
+        }
+        .product-image {
+            width: 100%;
+            height: 120px;
+            object-fit: cover;
+            background-color: #f3f4f6;
+        }
+        .product-info {
+            padding: 12px;
+        }
+        .product-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+            color: #1f2937;
+        }
+        .product-price {
+            color: #2563eb;
+            font-weight: 700;
+        }
+        .product-description {
+            font-size: 14px;
+            color: #6b7280;
+            margin-top: 8px;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .audio-player {
+            margin-top: 15px;
+            width: 100%;
+        }
+        .login-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #e5e7eb;
+            border-radius: 4px;
+            background-color: #f0f9ff;
+        }
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .login-form input {
+            padding: 8px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+        }
+        .add-to-cart {
+            background-color: #16a34a;
+            color: white;
+            margin-top: 10px;
+            width: 100%;
+            padding: 6px 12px;
+            font-size: 14px;
+        }
+        .flex-between {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
     </style>
 </head>
 <body>
-    <h1>Voice Processing Test</h1>
+    <h1>Voice Order System Test</h1>
     
     <div class="container">
+        <!-- Authentication Section -->
+        <div class="login-section" id="authSection">
+            <h3>Authentication</h3>
+            <div id="loginForm" class="login-form">
+                <input type="email" id="email" placeholder="Email" required>
+                <input type="password" id="password" placeholder="Password" required>
+                <button id="loginButton" class="primary">Login</button>
+            </div>
+            <div id="userInfo" style="display: none;">
+                <div class="flex-between">
+                    <p>Logged in as: <strong id="userEmail"></strong></p>
+                    <button id="logoutButton" class="secondary">Logout</button>
+                </div>
+                <p>Voice credits: <span id="voiceCredits">5</span> remaining</p>
+            </div>
+        </div>
+        
         <div class="controls">
             <div>
                 <label for="language">Select Language:</label>
@@ -145,10 +246,8 @@
                     <option value="en-US">English (US)</option>
                     <option value="es-ES">Spanish</option>
                     <option value="fr-FR">French</option>
-                    <option value="de-DE">German</option>
-                    <option value="it-IT">Italian</option>
-                    <option value="ja-JP">Japanese</option>
-                    <option value="ko-KR">Korean</option>
+                    <option value="sw-TZ">Swahili</option>
+                    <option value="ar-SA">Arabic</option>
                     <option value="zh-CN">Chinese (Simplified)</option>
                 </select>
             </div>
@@ -157,10 +256,14 @@
                 <strong>Recording...</strong> (Click "Stop" when finished)
             </div>
             
+            <div id="realTimeTranscript" class="real-time-transcript" style="display: none;">
+                Listening...
+            </div>
+            
             <div class="button-group">
                 <button id="startButton" class="primary">Start Recording</button>
                 <button id="stopButton" class="warning" disabled>Stop Recording</button>
-                <button id="testButton" class="secondary" disabled>Test Voice</button>
+                <button id="manualProcessButton" class="secondary" style="display: none;">Process Manually</button>
             </div>
         </div>
         
@@ -169,15 +272,29 @@
             <p>Processing voice recording...</p>
         </div>
         
-                    <div id="resultContainer" style="display: none;">
+        <div id="resultContainer" style="display: none;">
             <div class="result">
                 <h3>Transcription <span id="transcriptionStatus" class="badge"></span></h3>
                 <p id="transcriptionResult"></p>
+                <div id="audioPlayerContainer" style="display: none;">
+                    <h4>Recorded Audio</h4>
+                    <audio id="audioPlayer" controls class="audio-player"></audio>
+                    <p><small>Audio file saved to S3 bucket: <span id="audioFileUrl"></span></small></p>
+                </div>
             </div>
             
             <div class="result">
-                <h3>OpenAI Analysis <span id="openaiStatus" class="badge"></span></h3>
-                <pre id="openaiResult"></pre>
+                <h3>AI Recommendation <span id="openaiStatus" class="badge"></span></h3>
+                <p id="aiRecommendation"></p>
+                <pre id="openaiResult" style="display: none;"></pre>
+                <button id="showJsonButton" class="secondary" style="margin-top: 10px; font-size: 12px;">Show Raw JSON</button>
+            </div>
+            
+            <div class="result">
+                <h3>Product Recommendations</h3>
+                <div id="productsContainer" class="products-grid">
+                    <!-- Products will be inserted here -->
+                </div>
             </div>
         </div>
         
@@ -185,7 +302,7 @@
         <div class="result" style="margin-top: 30px;">
             <h3>Direct API Test</h3>
             <p>Test the API endpoint directly with this form:</p>
-            <form id="directApiForm" enctype="multipart/form-data" method="post" action="/api/voice-test-api">
+            <form id="directApiForm" enctype="multipart/form-data">
                 <div style="margin-bottom: 15px;">
                     <label for="directAudioFile">Select audio file: </label>
                     <input type="file" id="directAudioFile" name="audio" accept="audio/*">
@@ -196,6 +313,7 @@
                         <option value="en-US">English (US)</option>
                         <option value="es-ES">Spanish</option>
                         <option value="fr-FR">French</option>
+                        <option value="sw-TZ">Swahili</option>
                     </select>
                 </div>
                 <button type="submit" class="primary" style="cursor: pointer; padding: 8px 16px; background-color: #2563eb; color: white; border: none; border-radius: 4px;">Submit Direct Test</button>
@@ -207,26 +325,169 @@
         // DOM elements
         const startButton = document.getElementById('startButton');
         const stopButton = document.getElementById('stopButton');
-        const testButton = document.getElementById('testButton');
+        const manualProcessButton = document.getElementById('manualProcessButton');
         const recordingStatus = document.getElementById('recordingStatus');
         const loadingIndicator = document.getElementById('loading');
         const resultContainer = document.getElementById('resultContainer');
         const transcriptionResult = document.getElementById('transcriptionResult');
         const openaiResult = document.getElementById('openaiResult');
+        const aiRecommendation = document.getElementById('aiRecommendation');
+        const showJsonButton = document.getElementById('showJsonButton');
         const transcriptionStatus = document.getElementById('transcriptionStatus');
         const openaiStatus = document.getElementById('openaiStatus');
         const languageSelect = document.getElementById('language');
         const directApiForm = document.getElementById('directApiForm');
+        const productsContainer = document.getElementById('productsContainer');
+        const realTimeTranscript = document.getElementById('realTimeTranscript');
+        const audioPlayer = document.getElementById('audioPlayer');
+        const audioPlayerContainer = document.getElementById('audioPlayerContainer');
+        const audioFileUrl = document.getElementById('audioFileUrl');
+        
+        // Auth elements
+        const loginForm = document.getElementById('loginForm');
+        const userInfo = document.getElementById('userInfo');
+        const userEmail = document.getElementById('userEmail');
+        const voiceCredits = document.getElementById('voiceCredits');
+        const loginButton = document.getElementById('loginButton');
+        const logoutButton = document.getElementById('logoutButton');
         
         // MediaRecorder variables
         let mediaRecorder;
         let audioChunks = [];
         let audioBlob;
+        let stream;
+        let session_id = generateSessionId();
+        
+        // Auth variables
+        let authToken = localStorage.getItem('auth_token');
+        let isAuthenticated = !!authToken;
+        
+        // Check authentication status on load
+        checkAuthStatus();
+        
+        // Real-time transcription
+        let recognitionEnabled = 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
+        let recognition;
+        
+        // Initialize speech recognition if available
+        if (recognitionEnabled) {
+            recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            
+            recognition.onresult = function(event) {
+                let interimTranscript = '';
+                let finalTranscript = '';
+                
+                for (let i = event.resultIndex; i < event.results.length; i++) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript;
+                    } else {
+                        interimTranscript += event.results[i][0].transcript;
+                    }
+                }
+                
+                realTimeTranscript.innerHTML = finalTranscript + '<i style="color:#888">' + interimTranscript + '</i>';
+            };
+            
+            recognition.onerror = function(event) {
+                console.error('Speech recognition error', event.error);
+            };
+        }
+        
+        // Authentication functions
+        function checkAuthStatus() {
+            if (isAuthenticated) {
+                // Show user info
+                loginForm.style.display = 'none';
+                userInfo.style.display = 'block';
+                
+                // Fetch user details
+                fetchUserProfile();
+            } else {
+                loginForm.style.display = 'block';
+                userInfo.style.display = 'none';
+            }
+        }
+        
+        async function fetchUserProfile() {
+            try {
+                const response = await fetch('/api/v1/dashboard/user/profile/show', {
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    const userData = await response.json();
+                    userEmail.textContent = userData.data.email || 'User';
+                    voiceCredits.textContent = userData.data.voice_credits || '5';
+                } else {
+                    // Invalid token, log out
+                    logout();
+                }
+            } catch (error) {
+                console.error('Error fetching user profile:', error);
+            }
+        }
+        
+        function logout() {
+            localStorage.removeItem('auth_token');
+            authToken = null;
+            isAuthenticated = false;
+            checkAuthStatus();
+        }
+        
+        // Login event listener
+        loginButton.addEventListener('click', async () => {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            if (!email || !password) {
+                alert('Please enter both email and password');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/v1/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (data.access_token) {
+                    // Save token and update UI
+                    localStorage.setItem('auth_token', data.access_token);
+                    authToken = data.access_token;
+                    isAuthenticated = true;
+                    checkAuthStatus();
+                } else {
+                    alert('Login failed: ' + (data.message || 'Invalid credentials'));
+                }
+            } catch (error) {
+                console.error('Login error:', error);
+                alert('Login failed: Network error');
+            }
+        });
+        
+        // Logout event listener
+        logoutButton.addEventListener('click', logout);
+        
+        // Generate a unique session ID
+        function generateSessionId() {
+            return 'voice_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+        }
         
         // Start recording function
         startButton.addEventListener('click', async () => {
             try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 
                 mediaRecorder = new MediaRecorder(stream);
                 audioChunks = [];
@@ -237,172 +498,292 @@
                 
                 mediaRecorder.addEventListener('stop', () => {
                     audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                    testButton.disabled = false;
+                    
+                    // Create audio URL for playback
+                    const audioURL = URL.createObjectURL(audioBlob);
+                    audioPlayer.src = audioURL;
+                    
+                    // Auto-process the recording
+                    processVoiceOrder();
                 });
                 
                 mediaRecorder.start();
+                session_id = generateSessionId(); // Generate new session ID for this recording
+                
+                // Start real-time transcription if available
+                if (recognitionEnabled) {
+                    recognition.lang = languageSelect.value;
+                    recognition.start();
+                    realTimeTranscript.style.display = 'block';
+                }
                 
                 // Update UI
                 startButton.disabled = true;
                 stopButton.disabled = false;
                 recordingStatus.style.display = 'block';
+                resultContainer.style.display = 'none';
                 
             } catch (error) {
-                console.error('Error accessing microphone:', error);
-                alert('Error accessing microphone: ' + error.message);
+                console.error('Error starting recording:', error);
+                alert('Error starting recording: ' + error.message);
             }
         });
         
         // Stop recording function
         stopButton.addEventListener('click', () => {
-            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-                mediaRecorder.stop();
-                
-                // Stop all tracks in the stream
-                mediaRecorder.stream.getTracks().forEach(track => track.stop());
-                
-                // Update UI
-                startButton.disabled = false;
-                stopButton.disabled = true;
-                recordingStatus.style.display = 'none';
+            mediaRecorder.stop();
+            
+            // Stop real-time transcription
+            if (recognitionEnabled && recognition) {
+                recognition.stop();
             }
+            
+            // Stop all tracks in the stream
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            
+            // Update UI
+            startButton.disabled = false;
+            stopButton.disabled = true;
+            recordingStatus.style.display = 'none';
+            loadingIndicator.classList.add('active');
         });
         
-        // Test voice function
-        testButton.addEventListener('click', async () => {
+        // Process voice order function
+        async function processVoiceOrder() {
             if (!audioBlob) {
-                alert('No audio recorded yet');
+                alert('Please record audio first');
                 return;
             }
             
-            // Reset results
+            // Show loading indicator
+            loadingIndicator.classList.add('active');
             resultContainer.style.display = 'none';
-            transcriptionResult.textContent = '';
-            openaiResult.textContent = '';
+            
+            try {
+                // Create form data for the API request
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'recording.webm');
+                formData.append('language', languageSelect.value);
+                formData.append('session_id', session_id);
+                
+                // Add headers with authentication if available
+                const headers = {};
+                if (authToken) {
+                    headers['Authorization'] = `Bearer ${authToken}`;
+                }
+                
+                // Send the request to the voice order endpoint
+                const response = await fetch('/api/v1/rest/voice-order', {
+                    method: 'POST',
+                    headers: headers,
+                    body: formData
+                });
+                
+                const result = await response.json();
+                
+                // Hide loading indicator
+                loadingIndicator.classList.remove('active');
+                
+                // Display results
+                transcriptionResult.textContent = result.transcription || 'No transcription available';
+                transcriptionStatus.textContent = result.success ? 'Success' : 'Error';
+                transcriptionStatus.className = 'badge ' + (result.success ? 'success' : 'error');
+                
+                // Show recommendation text
+                aiRecommendation.textContent = result.recommendation_text || 'No recommendation available';
+                
+                // Show raw JSON for debugging
+                openaiResult.textContent = JSON.stringify(result.intent_data || {}, null, 2);
+                openaiStatus.textContent = result.success ? 'Success' : 'Error';
+                openaiStatus.className = 'badge ' + (result.success ? 'success' : 'error');
+                
+                // Display S3 audio URL if available
+                if (result.audio_url) {
+                    audioFileUrl.textContent = result.audio_url;
+                    audioPlayerContainer.style.display = 'block';
+                } else {
+                    audioPlayerContainer.style.display = 'block'; // Show local audio player
+                }
+                
+                // Display product recommendations
+                displayProducts(result.recommendations || []);
+                
+                // Update voice credits if authenticated
+                if (isAuthenticated && result.voice_credits !== undefined) {
+                    voiceCredits.textContent = result.voice_credits;
+                }
+                
+                // Show results container
+                resultContainer.style.display = 'block';
+                
+            } catch (error) {
+                console.error('Error processing voice order:', error);
+                loadingIndicator.classList.remove('active');
+                alert('Error processing voice order: ' + error.message);
+            }
+        }
+        
+        // Toggle JSON display
+        showJsonButton.addEventListener('click', () => {
+            const isVisible = openaiResult.style.display !== 'none';
+            openaiResult.style.display = isVisible ? 'none' : 'block';
+            showJsonButton.textContent = isVisible ? 'Show Raw JSON' : 'Hide Raw JSON';
+        });
+        
+        // Direct API form submission
+        directApiForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            
+            const audioFile = document.getElementById('directAudioFile').files[0];
+            if (!audioFile) {
+                alert('Please select an audio file');
+                return;
+            }
             
             // Show loading indicator
             loadingIndicator.classList.add('active');
-            testButton.disabled = true;
+            resultContainer.style.display = 'none';
             
             try {
                 const formData = new FormData();
-                formData.append('audio', audioBlob);
-                formData.append('language', languageSelect.value);
+                formData.append('audio', audioFile);
+                formData.append('language', document.getElementById('directLanguage').value);
+                formData.append('session_id', session_id);
                 
-                console.log('Sending request to voice-test API endpoint...');
-                // Use the new API endpoint path to avoid conflict with frontend routes
-                const response = await fetch('/api/voice-test-api', {
-                    method: 'POST',  // Make sure this is POST
-                    body: formData,
-                    headers: {
-                        'Accept': 'application/json',
-                        'X-Requested-With': 'XMLHttpRequest'  // Add this to help identify AJAX requests
-                    },
-                    credentials: 'same-origin'  // Include cookies if needed
+                // Add headers with authentication if available
+                const headers = {};
+                if (authToken) {
+                    headers['Authorization'] = `Bearer ${authToken}`;
+                }
+                
+                const response = await fetch('/api/v1/rest/voice-order', {
+                    method: 'POST',
+                    headers: headers,
+                    body: formData
                 });
                 
-                console.log('Response status:', response.status);
+                const result = await response.json();
                 
-                // Check if response is HTML instead of JSON
-                const contentType = response.headers.get('content-type');
-                if (contentType && contentType.includes('text/html')) {
-                    const htmlContent = await response.text();
-                    console.error('Received HTML instead of JSON:', htmlContent);
-                    throw new Error('Server returned HTML instead of JSON. Check server logs for errors.');
-                }
-                
-                const data = await response.json();
-                
-                // Update UI
+                // Hide loading indicator
                 loadingIndicator.classList.remove('active');
-                resultContainer.style.display = 'block';
-                testButton.disabled = false;
                 
-                if (data.success) {
-                    // Show transcription
-                    transcriptionStatus.className = 'badge success';
-                    transcriptionStatus.textContent = 'Success';
-                    transcriptionResult.textContent = data.transcription;
-                    
-                    // Show OpenAI analysis
-                    openaiStatus.className = 'badge success';
-                    openaiStatus.textContent = 'Success';
-                    openaiResult.textContent = JSON.stringify(data.openai_analysis, null, 2);
+                // Display results (reusing the same UI elements)
+                transcriptionResult.textContent = result.transcription || 'No transcription available';
+                transcriptionStatus.textContent = result.success ? 'Success' : 'Error';
+                transcriptionStatus.className = 'badge ' + (result.success ? 'success' : 'error');
+                
+                // Show recommendation text
+                aiRecommendation.textContent = result.recommendation_text || 'No recommendation available';
+                
+                // Show raw JSON for debugging
+                openaiResult.textContent = JSON.stringify(result.intent_data || {}, null, 2);
+                openaiStatus.textContent = result.success ? 'Success' : 'Error';
+                openaiStatus.className = 'badge ' + (result.success ? 'success' : 'error');
+                
+                // Display S3 audio URL if available
+                if (result.audio_url) {
+                    audioFileUrl.textContent = result.audio_url;
+                    audioPlayerContainer.style.display = 'block';
+                    audioPlayer.src = result.audio_url;
                 } else {
-                    // Show error
-                    transcriptionStatus.className = 'badge error';
-                    transcriptionStatus.textContent = 'Error';
-                    transcriptionResult.textContent = data.message || 'Failed to process voice recording';
-                    
-                    if (data.error) {
-                        openaiStatus.className = 'badge error';
-                        openaiStatus.textContent = 'Error';
-                        openaiResult.textContent = data.error;
-                    }
+                    audioPlayerContainer.style.display = 'none';
                 }
+                
+                // Display product recommendations
+                displayProducts(result.recommendations || []);
+                
+                // Show results container
+                resultContainer.style.display = 'block';
                 
             } catch (error) {
-                console.error('Error testing voice:', error);
-                
+                console.error('Error with direct API test:', error);
                 loadingIndicator.classList.remove('active');
-                resultContainer.style.display = 'block';
-                testButton.disabled = false;
-                
-                transcriptionStatus.className = 'badge error';
-                transcriptionStatus.textContent = 'Error';
-                transcriptionResult.textContent = 'Error communicating with the server';
-                
-                openaiStatus.className = 'badge error';
-                openaiStatus.textContent = 'Error';
-                openaiResult.textContent = error.message;
+                alert('Error with direct API test: ' + error.message);
             }
         });
         
-        // Handle direct API form submission
-        if (directApiForm) {
-            directApiForm.addEventListener('submit', async (event) => {
-                event.preventDefault();
+        // Function to display products
+        function displayProducts(products) {
+            productsContainer.innerHTML = '';
+            
+            if (!products.length) {
+                productsContainer.innerHTML = '<p>No products found matching your request.</p>';
+                return;
+            }
+            
+            products.forEach(product => {
+                const productCard = document.createElement('div');
+                productCard.className = 'product-card';
                 
-                const formData = new FormData(directApiForm);
+                // Default image if none available
+                const imageUrl = product.img ? `/storage/${product.img}` : 'https://via.placeholder.com/150?text=Food';
                 
-                try {
-                    console.log('Submitting direct API test form...');
-                    const response = await fetch('/api/voice-test-api', {
-                        method: 'POST',
-                        body: formData,
-                        headers: {
-                            'Accept': 'application/json',
-                            'X-Requested-With': 'XMLHttpRequest'
-                        },
-                        credentials: 'same-origin'
-                    });
-                    
-                    console.log('Response status:', response.status);
-                    
-                    // Check content type
-                    const contentType = response.headers.get('content-type');
-                    if (contentType && contentType.includes('text/html')) {
-                        const htmlContent = await response.text();
-                        console.error('Received HTML instead of JSON:', htmlContent);
-                        alert('Server returned HTML instead of JSON. Check console for details.');
-                        return;
-                    }
-                    
-                    const data = await response.json();
-                    
-                    // Show the result
-                    if (data.success) {
-                        alert(`API test successful! Transcription: "${data.transcription}"`);
-                    } else {
-                        alert(`API test failed: ${data.message}`);
-                    }
-                    
-                    console.log('Full API response:', data);
-                } catch (error) {
-                    console.error('Direct API test error:', error);
-                    alert(`Error testing API: ${error.message}`);
-                }
+                // Get product name
+                const productName = product.translation ? product.translation.title : product.title || 'Unnamed Product';
+                
+                // Get product description
+                const productDesc = product.translation ? product.translation.description : product.description || '';
+                
+                // Get price from stocks if available
+                const price = product.stocks && product.stocks.length > 0 ? 
+                    product.stocks[0].price : product.price || 0;
+                
+                productCard.innerHTML = `
+                    <img src="${imageUrl}" alt="${productName}" class="product-image" onerror="this.src='https://via.placeholder.com/150?text=Food'">
+                    <div class="product-info">
+                        <div class="product-title">${productName}</div>
+                        <div class="product-price">$${parseFloat(price).toFixed(2)}</div>
+                        <div class="product-description">${productDesc}</div>
+                        <button class="add-to-cart" data-product-id="${product.id}">Add to Cart</button>
+                    </div>
+                `;
+                
+                productsContainer.appendChild(productCard);
             });
+            
+            // Add event listeners to add-to-cart buttons
+            document.querySelectorAll('.add-to-cart').forEach(button => {
+                button.addEventListener('click', function() {
+                    const productId = this.getAttribute('data-product-id');
+                    addToCart(productId);
+                });
+            });
+        }
+        
+        // Function to add product to cart
+        async function addToCart(productId) {
+            if (!isAuthenticated) {
+                alert('Please log in to add items to your cart');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/v1/rest/cart/insert-product', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        product_id: productId,
+                        quantity: 1
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('Product added to cart!');
+                } else {
+                    alert('Failed to add product to cart: ' + result.message);
+                }
+            } catch (error) {
+                console.error('Error adding to cart:', error);
+                alert('Error adding product to cart');
+            }
         }
     </script>
 </body>

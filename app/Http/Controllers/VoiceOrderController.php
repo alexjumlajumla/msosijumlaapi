@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Exception;
+use Illuminate\Support\Facades\Storage;
 
 class VoiceOrderController extends Controller
 {
@@ -54,7 +55,8 @@ class VoiceOrderController extends Controller
                 'request_time' => now()->toIso8601String(),
                 'client_ip' => $request->ip(),
                 'user_agent' => $request->userAgent()
-            ]
+            ],
+            'audio_stored' => false
         ];
 
         try {
@@ -80,15 +82,28 @@ class VoiceOrderController extends Controller
                 ], 422);
             }
 
-            $audioFilePath = $request->file('audio')->getPathname();
+            $audioFile = $request->file('audio');
+            $audioFilePath = $audioFile->getPathname();
             $language = $request->input('language', 'en-US');
+            
+            // Save audio file to S3
+            $audioUrl = $this->saveAudioFileToS3($audioFile, $sessionId);
+            
+            if ($audioUrl) {
+                $logData['audio_url'] = $audioUrl;
+                $logData['audio_format'] = $audioFile->getClientOriginalExtension();
+                $logData['audio_stored'] = true;
+                $logData['metadata']['audio_size'] = $audioFile->getSize();
+                $logData['metadata']['audio_mime'] = $audioFile->getMimeType();
+            }
             
             // Log audio file details
             \Log::info('Audio file details', [
                 'size' => filesize($audioFilePath),
-                'mime' => $request->file('audio')->getMimeType(),
-                'extension' => $request->file('audio')->extension(),
-                'language' => $language
+                'mime' => $audioFile->getMimeType(),
+                'extension' => $audioFile->extension(),
+                'language' => $language,
+                'stored_in_s3' => !empty($audioUrl)
             ]);
             
             // Check for cached transcription with same audio hash
@@ -128,6 +143,10 @@ class VoiceOrderController extends Controller
                 ], 422);
             }
                 
+            // Store the transcription in logData
+            $logData['input'] = $transcriptionText;
+            $logData['request_content'] = $transcriptionText;
+                
             // Fix: Pass transcription as string to processOrderIntent
             \Log::info('Processing order intent', ['text' => $transcriptionText]);
             $orderData = $this->aiOrderService->processOrderIntent($transcriptionText, $user);
@@ -141,8 +160,6 @@ class VoiceOrderController extends Controller
             }
 
             // Update log data with input and filters
-            $logData['input'] = $transcriptionText;
-            $logData['request_content'] = $transcriptionText;
             $logData['filters_detected'] = $orderData;
             $logData['metadata']['order_data'] = $orderData;
 
@@ -898,6 +915,57 @@ class VoiceOrderController extends Controller
                 'message' => 'Failed to transcribe audio: ' . $e->getMessage(),
                 'error_code' => $e->getCode()
             ], 500);
+        }
+    }
+
+    /**
+     * Save audio file to S3 storage
+     * 
+     * @param UploadedFile $audioFile The uploaded audio file
+     * @param string $sessionId Session identifier for the voice order
+     * @return string|null S3 URL of the stored file or null if saving failed
+     */
+    private function saveAudioFileToS3($audioFile, string $sessionId): ?string
+    {
+        try {
+            // Generate a unique filename with timestamp and session ID
+            $fileName = 'voice-orders/' . auth()->id() . '/' . date('Y-m-d') . '/' . 
+                        $sessionId . '-' . time() . '.' . $audioFile->getClientOriginalExtension();
+            
+            // Store the file in S3 with public visibility
+            $path = Storage::disk('s3')->putFileAs(
+                'voice-orders', 
+                $audioFile, 
+                $fileName, 
+                'public'
+            );
+            
+            if (!$path) {
+                \Log::error('Failed to upload audio file to S3', [
+                    'session_id' => $sessionId,
+                    'original_name' => $audioFile->getClientOriginalName()
+                ]);
+                return null;
+            }
+            
+            // Get the full S3 URL
+            $url = Storage::disk('s3')->url($path);
+            
+            \Log::info('Audio file saved to S3', [
+                'session_id' => $sessionId,
+                'url' => $url,
+                'path' => $path
+            ]);
+            
+            return $url;
+        } catch (\Exception $e) {
+            \Log::error('Error saving audio file to S3: ' . $e->getMessage(), [
+                'exception' => get_class($e),
+                'session_id' => $sessionId,
+                'original_name' => $audioFile->getClientOriginalName(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return null;
         }
     }
 } 

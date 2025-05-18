@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\API\v1\Dashboard\Admin;
 
-use App\Http\Controllers\API\v1\Dashboard\Admin\AdminBaseController;
 use App\Helpers\ResponseError;
 use App\Http\Requests\FilterParamsRequest;
 use App\Http\Resources\LoanResource;
@@ -14,18 +13,22 @@ use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class LoanController extends AdminBaseController
 {
-    public function __construct(private LoanService $service)
+    private LoanService $service;
+
+    public function __construct(LoanService $service)
     {
         parent::__construct();
+        $this->service = $service;
     }
 
     /**
      * Display a listing of loans
      */
-    public function index(Request $request): AnonymousResourceCollection
+    public function index(FilterParamsRequest $request): AnonymousResourceCollection
     {
-        $loans = Loan::with(['vendor', 'repayments'])
-            ->when($request->user_id, fn($q) => $q->where('user_id', $request->user_id))
+        $loans = Loan::with(['user', 'disbursedBy', 'repayments'])
+            ->when($request->input('user_id'), fn($q) => $q->where('user_id', $request->input('user_id')))
+            ->when($request->input('status'), fn($q) => $q->where('status', $request->input('status')))
             ->orderBy($request->input('column', 'id'), $request->input('sort', 'desc'))
             ->paginate($request->input('perPage', 15));
 
@@ -37,27 +40,36 @@ class LoanController extends AdminBaseController
      */
     public function store(Request $request): JsonResponse
     {
-        $data = $request->validate([
-            'user_id'       => 'required|exists:users,id',
-            'amount'        => 'required|numeric|min:1',
-            'interest_rate' => 'required|numeric|min:0',
-            'due_date'      => 'required|date|after:today',
-            'note'          => 'nullable|string',
-        ]);
+        $result = $this->service->disburseLoan($request->all());
 
-        $result = $this->service->disburseLoan($data);
+        if (!data_get($result, 'status')) {
+            return $this->onErrorResponse($result);
+        }
 
-        return $result['status']
-            ? $this->successResponse(__('web.record_was_successfully_created'), $result['data'])
-            : $this->onErrorResponse($result);
+        return $this->successResponse(
+            __('errors.' . ResponseError::RECORD_WAS_SUCCESSFULLY_CREATED, locale: $this->language),
+            LoanResource::make(data_get($result, 'data'))
+        );
     }
 
     /**
      * Display loan details
      */
-    public function show(Loan $loan): JsonResponse
+    public function show(int $id): JsonResponse
     {
-        return $this->successResponse(__('web.record_has_been_successfully_found'), $loan->load(['vendor','repayments']));
+        $loan = Loan::with(['user', 'disbursedBy', 'repayments'])->find($id);
+
+        if (!$loan) {
+            return $this->onErrorResponse([
+                'code' => ResponseError::ERROR_404,
+                'message' => __('errors.' . ResponseError::ERROR_404, locale: $this->language)
+            ]);
+        }
+
+        return $this->successResponse(
+            __('errors.' . ResponseError::SUCCESS, locale: $this->language),
+            LoanResource::make($loan)
+        );
     }
 
     /**
@@ -88,12 +100,5 @@ class LoanController extends AdminBaseController
             __('errors.' . ResponseError::SUCCESS, locale: $this->language),
             $stats
         );
-    }
-
-    // DELETE dashboard/admin/loans/{loan}
-    public function destroy(Loan $loan): JsonResponse
-    {
-        $loan->delete();
-        return $this->successResponse(__('web.record_was_successfully_deleted'));
     }
 }
