@@ -46,6 +46,15 @@ class VoiceDialogueService
         ],
         'quantity' => [
             'quantity', 'pieces', 'servings', 'how many'
+        ],
+        'repeat_order' => [
+            'same as last time', 'order again', 'repeat order', 'same order', 
+            'previous order', 'last order', 'same thing'
+        ],
+        'dietary_preference' => [
+            'vegetarian', 'vegan', 'gluten free', 'dairy free', 'low carb', 
+            'keto', 'high protein', 'paleo', 'halal', 'kosher', 'no meat',
+            'no dairy', 'no gluten', 'organic', 'sugar free'
         ]
     ];
     
@@ -77,7 +86,8 @@ class VoiceDialogueService
             'shop_id' => null,
             'address_id' => null,
             'currency_id' => null,
-            'delivery_type' => 'delivery'
+            'delivery_type' => 'delivery',
+            'dietary_preferences' => []
         ];
     }
     
@@ -239,6 +249,14 @@ class VoiceDialogueService
                 $response = $this->handleQuantityChange($intent, $response);
                 break;
                 
+            case 'repeat_order':
+                $response = $this->handleRepeatOrder($intent, $response);
+                break;
+                
+            case 'dietary_preference':
+                $response = $this->handleDietaryPreference($intent, $response);
+                break;
+                
             default:
                 // If no specific intent was detected, try to find products
                 $productEntities = $this->extractProductEntities($transcription);
@@ -266,6 +284,24 @@ class VoiceDialogueService
     {
         $products = [];
         $failedProducts = [];
+        $dietaryPreferences = [];
+        
+        // Extract all dietary preferences from entities
+        foreach ($intent['entities'] as $entity) {
+            if (isset($entity['dietary_preferences']) && is_array($entity['dietary_preferences'])) {
+                $dietaryPreferences = array_merge($dietaryPreferences, $entity['dietary_preferences']);
+            }
+        }
+        
+        if (!empty($dietaryPreferences)) {
+            // Update dialogue state with dietary preferences
+            $this->dialogueState['dietary_preferences'] = array_unique(
+                array_merge($this->dialogueState['dietary_preferences'], $dietaryPreferences)
+            );
+            
+            // Add to response
+            $response['dietary_preferences'] = $this->dialogueState['dietary_preferences'];
+        }
         
         foreach ($intent['entities'] as $entity) {
             if ($entity['type'] === 'product') {
@@ -311,6 +347,12 @@ class VoiceDialogueService
                 $response['message'] .= " I couldn't find: " . implode(', ', $failedProducts);
             }
             
+            // If dietary preferences were detected, acknowledge them
+            if (!empty($dietaryPreferences)) {
+                $response['message'] .= " I've noted your dietary preferences: " . 
+                    $this->formatDietaryPreferences($dietaryPreferences) . ".";
+            }
+            
             // Update dialogue state
             $this->dialogueState['step'] = 'items_added';
             $this->dialogueState['products'] = array_merge($this->dialogueState['products'], $products);
@@ -332,6 +374,12 @@ class VoiceDialogueService
             $response['message'] = "I couldn't find the products you mentioned. Please try again.";
             if (!empty($failedProducts)) {
                 $response['message'] .= " I couldn't find: " . implode(', ', $failedProducts);
+            }
+            
+            // If dietary preferences were set, acknowledge them for future use
+            if (!empty($dietaryPreferences)) {
+                $response['message'] .= " I've noted your dietary preferences: " . 
+                    $this->formatDietaryPreferences($dietaryPreferences) . " for future recommendations.";
             }
         }
         
@@ -613,16 +661,73 @@ class VoiceDialogueService
         $entities = [];
         $products = $this->searchProducts($transcription);
         
+        // Extract dietary preferences
+        $dietaryPreferences = $this->extractDietaryPreferences($transcription);
+        
         foreach ($products as $product) {
-            $entities[] = [
+            $productEntity = [
                 'type' => 'product',
                 'value' => $product->name,
                 'id' => $product->id,
                 'confidence' => 0.8
             ];
+            
+            // Add dietary preferences if found
+            if (!empty($dietaryPreferences)) {
+                $productEntity['dietary_preferences'] = $dietaryPreferences;
+                // Update the dialogue state with these preferences
+                $this->dialogueState['dietary_preferences'] = array_unique(
+                    array_merge($this->dialogueState['dietary_preferences'], $dietaryPreferences)
+                );
+            }
+            
+            $entities[] = $productEntity;
         }
         
         return $entities;
+    }
+    
+    /**
+     * Extract dietary preferences from transcription
+     * 
+     * @param string $transcription
+     * @return array Dietary preferences
+     */
+    protected function extractDietaryPreferences(string $transcription): array
+    {
+        $preferences = [];
+        $lowercaseText = strtolower($transcription);
+        
+        // Common dietary preferences and nutrition terms
+        $dietaryTerms = [
+            'vegetarian' => ['vegetarian', 'no meat'],
+            'vegan' => ['vegan', 'plant based', 'no animal products'],
+            'gluten_free' => ['gluten free', 'no gluten', 'gluten-free'],
+            'dairy_free' => ['dairy free', 'no dairy', 'lactose free', 'dairy-free'],
+            'keto' => ['keto', 'ketogenic', 'low carb high fat'],
+            'low_carb' => ['low carb', 'low carbohydrate', 'no carbs'],
+            'high_protein' => ['high protein', 'protein rich', 'extra protein'],
+            'paleo' => ['paleo', 'paleolithic'],
+            'halal' => ['halal'],
+            'kosher' => ['kosher'],
+            'organic' => ['organic', 'organically grown'],
+            'sugar_free' => ['sugar free', 'no sugar', 'sugar-free'],
+            'nut_free' => ['nut free', 'no nuts', 'without nuts'],
+            'low_calorie' => ['low calorie', 'diet', 'light'],
+            'spicy' => ['spicy', 'hot', 'extra spicy'],
+            'mild' => ['mild', 'not spicy', 'no spice']
+        ];
+        
+        foreach ($dietaryTerms as $preference => $terms) {
+            foreach ($terms as $term) {
+                if (strpos($lowercaseText, $term) !== false) {
+                    $preferences[] = $preference;
+                    break; // Found one term for this preference, no need to check others
+                }
+            }
+        }
+        
+        return array_unique($preferences);
     }
     
     /**
@@ -1171,5 +1276,234 @@ class VoiceDialogueService
     public function getDeliveryType(): string
     {
         return $this->dialogueState['delivery_type'];
+    }
+    
+    /**
+     * Handle repeat order intent
+     * 
+     * @param array $intent Intent data
+     * @param array $response Current response
+     * @return array Updated response
+     */
+    protected function handleRepeatOrder(array $intent, array $response): array
+    {
+        // In a real implementation, this would fetch the user's previous orders
+        // from a database or other storage
+        $previousOrders = $this->getPreviousOrders();
+        
+        if (empty($previousOrders)) {
+            $response['message'] = "I couldn't find any previous orders to repeat. Please try ordering specific items.";
+            return $response;
+        }
+        
+        // Take the most recent order
+        $lastOrder = $previousOrders[0];
+        $products = [];
+        
+        // Process items from the previous order
+        foreach ($lastOrder['items'] as $item) {
+            $product = $this->findProduct($item['name']);
+            
+            if ($product) {
+                $quantity = $item['quantity'] ?? 1;
+                $this->addToCart($product, $quantity);
+                
+                $products[] = [
+                    'id' => $product->id,
+                    'name' => $product->name,
+                    'price' => $this->formatPrice($product->price, $this->dialogueState['currency']),
+                    'quantity' => $quantity,
+                    'shop_id' => $product->shop_id ?? $this->dialogueState['shop_id'],
+                    'repeated' => true
+                ];
+                
+                // If the product has a shop_id and we don't have one yet, set it
+                if (empty($this->dialogueState['shop_id']) && !empty($product->shop_id)) {
+                    $this->dialogueState['shop_id'] = $product->shop_id;
+                }
+            }
+        }
+        
+        if (!empty($products)) {
+            $response['actions'][] = [
+                'type' => 'add_to_cart',
+                'products' => $products,
+                'shop_id' => $this->dialogueState['shop_id'],
+                'address_id' => $this->dialogueState['address_id'],
+                'currency_id' => $this->dialogueState['currency_id'],
+                'repeated_order' => true
+            ];
+            
+            $response['message'] = "I've repeated your previous order with " . count($products) . " item(s).";
+            
+            // Update dialogue state
+            $this->dialogueState['step'] = 'items_added';
+            $this->dialogueState['products'] = array_merge($this->dialogueState['products'], $products);
+            
+            // Suggest checkout
+            $paymentMethods = $this->getAvailablePaymentMethods();
+            if (!empty($paymentMethods)) {
+                $response['message'] .= " Would you like to checkout? You can pay with " . 
+                    implode(', ', array_column($paymentMethods, 'name')) . ".";
+                
+                $response['actions'][] = [
+                    'type' => 'suggest_payment_methods',
+                    'payment_methods' => $paymentMethods
+                ];
+            }
+        } else {
+            $response['message'] = "I'm sorry, I couldn't repeat your previous order. Please try ordering specific items.";
+        }
+        
+        return $response;
+    }
+    
+    /**
+     * Handle dietary preference intent
+     * 
+     * @param array $intent Intent data
+     * @param array $response Current response
+     * @return array Updated response
+     */
+    protected function handleDietaryPreference(array $intent, array $response): array
+    {
+        $dietaryPreferences = $this->extractDietaryPreferences($this->dialogueState['last_transcription']);
+        
+        if (empty($dietaryPreferences)) {
+            $response['message'] = "I couldn't detect any specific dietary preferences. You can specify preferences like vegetarian, vegan, gluten-free, etc.";
+            return $response;
+        }
+        
+        // Update dialogue state with dietary preferences
+        $this->dialogueState['dietary_preferences'] = array_unique(
+            array_merge($this->dialogueState['dietary_preferences'], $dietaryPreferences)
+        );
+        
+        // Add to response
+        $response['dietary_preferences'] = $this->dialogueState['dietary_preferences'];
+        $response['message'] = "I've noted your dietary preferences: " . 
+            $this->formatDietaryPreferences($dietaryPreferences) . ". I'll consider these when making recommendations.";
+        
+        // If cart is already populated, recommend products based on preferences
+        if (!empty($this->dialogueState['cart'])) {
+            $response['message'] .= " Would you like to see some " . 
+                $this->formatDietaryPreferences($dietaryPreferences) . " options?";
+                
+            $response['actions'][] = [
+                'type' => 'suggest_dietary_options',
+                'dietary_preferences' => $dietaryPreferences
+            ];
+        }
+        
+        return $response;
+    }
+    
+    /**
+     * Get previous orders for the current user
+     * 
+     * @param int $limit Maximum number of orders to return
+     * @return array Previous orders
+     */
+    protected function getPreviousOrders(int $limit = 5): array
+    {
+        // In a real implementation, this would fetch from a database
+        // This is a placeholder implementation with mock data
+        return [
+            [
+                'id' => 1,
+                'date' => '2023-05-10',
+                'total' => 29.99,
+                'items' => [
+                    [
+                        'name' => 'Chicken Burger',
+                        'quantity' => 2,
+                        'price' => 8.99
+                    ],
+                    [
+                        'name' => 'French Fries',
+                        'quantity' => 1,
+                        'price' => 3.99
+                    ],
+                    [
+                        'name' => 'Soda',
+                        'quantity' => 2,
+                        'price' => 1.99
+                    ]
+                ]
+            ],
+            [
+                'id' => 2,
+                'date' => '2023-05-05',
+                'total' => 35.50,
+                'items' => [
+                    [
+                        'name' => 'Vegetarian Pizza',
+                        'quantity' => 1,
+                        'price' => 12.50
+                    ],
+                    [
+                        'name' => 'Caesar Salad',
+                        'quantity' => 1,
+                        'price' => 6.75
+                    ],
+                    [
+                        'name' => 'Pasta Carbonara',
+                        'quantity' => 1,
+                        'price' => 9.50
+                    ],
+                    [
+                        'name' => 'Soda',
+                        'quantity' => 1,
+                        'price' => 1.99
+                    ]
+                ]
+            ]
+        ];
+    }
+    
+    /**
+     * Format a list of dietary preferences for display in messages
+     * 
+     * @param array $preferences List of dietary preference codes
+     * @return string Formatted string
+     */
+    protected function formatDietaryPreferences(array $preferences): string
+    {
+        $displayNames = [
+            'vegetarian' => 'vegetarian',
+            'vegan' => 'vegan',
+            'gluten_free' => 'gluten-free',
+            'dairy_free' => 'dairy-free',
+            'keto' => 'keto',
+            'low_carb' => 'low-carb',
+            'high_protein' => 'high-protein',
+            'paleo' => 'paleo',
+            'halal' => 'halal',
+            'kosher' => 'kosher',
+            'organic' => 'organic',
+            'sugar_free' => 'sugar-free',
+            'nut_free' => 'nut-free',
+            'low_calorie' => 'low-calorie',
+            'spicy' => 'spicy',
+            'mild' => 'mild'
+        ];
+        
+        $formatted = [];
+        foreach ($preferences as $pref) {
+            if (isset($displayNames[$pref])) {
+                $formatted[] = $displayNames[$pref];
+            } else {
+                $formatted[] = str_replace('_', '-', $pref);
+            }
+        }
+        
+        if (count($formatted) === 1) {
+            return $formatted[0];
+        } elseif (count($formatted) === 2) {
+            return $formatted[0] . ' and ' . $formatted[1];
+        } else {
+            $last = array_pop($formatted);
+            return implode(', ', $formatted) . ', and ' . $last;
+        }
     }
 } 

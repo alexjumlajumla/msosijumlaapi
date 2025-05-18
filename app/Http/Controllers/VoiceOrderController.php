@@ -44,7 +44,11 @@ class VoiceOrderController extends Controller
         // Log the entire request for debugging
         \Log::info('Voice order request:', [
             'request' => $request->all(),
-            'files' => $request->hasFile('audio') ? 'Audio file present' : 'No audio file',
+            'files' => $request->hasFile('audio') ? [
+                'name' => $request->file('audio')->getClientOriginalName(),
+                'size' => $request->file('audio')->getSize(),
+                'mime' => $request->file('audio')->getMimeType(),
+            ] : 'No audio file',
             'headers' => $request->header(),
             'session_id' => $sessionId
         ]);
@@ -63,7 +67,7 @@ class VoiceOrderController extends Controller
         ];
 
         try {
-            // Check if user has enough credits
+            // Check if user has enough credits - skip for guest users
             if (Auth::check()) {
                 $user = Auth::user();
                 if (!$this->checkVoiceOrderCredits($user)) {
@@ -137,10 +141,17 @@ class VoiceOrderController extends Controller
             // Process the transcript with user context if available
             $user = Auth::check() ? Auth::user() : null;
             
-            // Ensure transcription is a string - fixes the "Argument #1 ($transcription) must be of type string" error
-            $transcriptionText = is_array($transcription) ? 
-                ($transcription['transcription'] ?? '') : 
-                (is_string($transcription) ? $transcription : '');
+            // Extract transcription text properly
+            $transcriptionText = '';
+            if (is_array($transcription)) {
+                if (isset($transcription['transcription'])) {
+                    $transcriptionText = $transcription['transcription'];
+                } elseif (isset($transcription['text'])) {
+                    $transcriptionText = $transcription['text'];
+                }
+            } elseif (is_string($transcription)) {
+                $transcriptionText = $transcription;
+            }
                 
             \Log::info('Transcription result', ['text' => $transcriptionText]);
             
@@ -160,7 +171,7 @@ class VoiceOrderController extends Controller
             // Track AI processing time
             $aiStartTime = microtime(true);
                 
-            // Fix: Pass transcription as string to processOrderIntent
+            // Process order intent with transcription text
             \Log::info('Processing order intent', ['text' => $transcriptionText]);
             $orderData = $this->aiOrderService->processOrderIntent($transcriptionText, $user);
             \Log::info('Order intent processed', ['data' => $orderData]);
@@ -224,23 +235,46 @@ class VoiceOrderController extends Controller
             // Create a VoiceOrder record
             $voiceOrderData = [
                 'session_id' => $sessionId,
-                'transcription' => $transcriptionText,
+                'transcription_text' => $transcriptionText,
                 'intent_data' => $orderData,
                 'filters_detected' => $orderData,
                 'product_ids' => $recommendations->pluck('id')->toArray(),
                 'recommendation_text' => $recommendationText,
                 'audio_url' => $logData['audio_url'] ?? null,
                 'audio_format' => $logData['audio_format'] ?? null,
-                'audio_file_path' => $audioFilePath,
-                'confidence' => $transcription['confidence'] ?? null,
+                'audio_duration' => $this->voiceOrderService->getAudioDuration($audioFilePath),
+                'confidence_score' => $transcription['confidence'] ?? null,
                 'processing_time_ms' => $logData['processing_time_ms'],
                 'transcription_duration_ms' => $transcriptionDuration,
                 'ai_processing_duration_ms' => $aiProcessingDuration,
                 'score' => $avgScore,
-                'log_id' => $logEntry->id
+                'log_id' => $logEntry->id,
+                'shop_id' => $this->dialogueState['shop_id'] ?? null,
+                'currency_id' => $this->dialogueState['currency_id'] ?? null,
+                'address_id' => $this->dialogueState['address_id'] ?? null,
+                'delivery_type' => $this->dialogueState['delivery_type'] ?? 'delivery',
             ];
             
-            $voiceOrder = $this->voiceOrderService->createVoiceOrder($voiceOrderData, $user);
+            // Try to create the voice order, but continue even if it fails
+            try {
+                $voiceOrder = $this->voiceOrderService->createVoiceOrder($voiceOrderData, $user);
+                $voiceOrderId = $voiceOrder ? $voiceOrder->id : null;
+                
+                if (!$voiceOrder) {
+                    \Log::warning('Failed to create voice order, but continuing with response', [
+                        'log_id' => $logEntry->id,
+                        'session_id' => $sessionId
+                    ]);
+                }
+            } catch (\Exception $e) {
+                \Log::error('Exception creating voice order record, but continuing with response', [
+                    'error' => $e->getMessage(),
+                    'log_id' => $logEntry->id,
+                    'session_id' => $sessionId
+                ]);
+                $voiceOrderId = null;
+                $voiceOrder = null;
+            }
             
             $response = [
                 'success' => true, 
@@ -250,14 +284,14 @@ class VoiceOrderController extends Controller
                 'recommendation_text' => $recommendationText,
                 'session_id' => $sessionId,
                 'log_id' => $logEntry->id,
-                'voice_order_id' => $voiceOrder->id,
+                'voice_order_id' => $voiceOrderId ?? null,
                 'confidence_score' => $transcription['confidence'] ?? null
             ];
             
             \Log::info('Voice order processed successfully', [
                 'session_id' => $sessionId,
                 'log_id' => $logEntry->id,
-                'voice_order_id' => $voiceOrder->id,
+                'voice_order_id' => $voiceOrderId ?? null,
                 'processing_time_ms' => $logData['processing_time_ms']
             ]);
             
@@ -277,7 +311,9 @@ class VoiceOrderController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error processing voice order: ' . $e->getMessage(),
-                'error_type' => get_class($e)
+                'error_type' => get_class($e),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
             ], 500);
         } finally {
             // Always create log entry even on error
@@ -905,10 +941,14 @@ class VoiceOrderController extends Controller
     public function transcribe(Request $request)
     {
         try {
-            // Log authentication information for debugging
+            // Log request details for debugging
             \Log::info('Public Transcription request', [
-                'auth_header' => $request->header('Authorization'),
                 'has_file' => $request->hasFile('audio'),
+                'file_info' => $request->hasFile('audio') ? [
+                    'name' => $request->file('audio')->getClientOriginalName(),
+                    'size' => $request->file('audio')->getSize(),
+                    'mime' => $request->file('audio')->getMimeType(),
+                ] : 'No file',
                 'ip' => $request->ip(),
                 'user_agent' => $request->userAgent()
             ]);
@@ -925,38 +965,48 @@ class VoiceOrderController extends Controller
             $language = $request->input('language', 'en-US');
             $sessionId = $request->input('session_id', md5(uniqid()));
             
-            // Log the audio details for debugging
-            \Log::info('Audio file details', [
-                'size' => $audioFile->getSize(),
-                'mime' => $audioFile->getMimeType(),
-                'extension' => $audioFile->extension(),
-                'language' => $language
-            ]);
-            
             // Save audio to S3 if authenticated
             $audioUrl = null;
             if (Auth::check()) {
                 $audioUrl = $this->saveAudioFileToS3($audioFile, $sessionId);
             }
             
-            // Just transcribe the audio without further processing
-            $result = $this->transcribeAudio($audioFile, $language);
+            // Transcribe the audio
+            $transcriptionStartTime = microtime(true);
+            $transcription = $this->voiceOrderService->transcribeAudio($audioFile->getPathname(), $language);
+            $transcriptionDuration = (int)((microtime(true) - $transcriptionStartTime) * 1000);
+            
+            \Log::info('Transcription result', [
+                'result' => $transcription,
+                'duration_ms' => $transcriptionDuration
+            ]);
+            
+            // Extract transcription text properly
+            $transcriptionText = '';
+            if (is_array($transcription) && isset($transcription['transcription'])) {
+                $transcriptionText = $transcription['transcription'];
+            } elseif (is_array($transcription) && isset($transcription['text'])) {
+                $transcriptionText = $transcription['text'];
+            } elseif (is_string($transcription)) {
+                $transcriptionText = $transcription;
+            }
             
             // Create log entry if authenticated
+            $logId = null;
             if (Auth::check()) {
                 $logData = [
                     'user_id' => Auth::id(),
                     'request_type' => 'transcription_only',
                     'session_id' => $sessionId,
-                    'input' => $result['transcription'] ?? '',
-                    'request_content' => $result['transcription'] ?? '',
-                    'output' => $result['transcription'] ?? '',
-                    'response_content' => $result['transcription'] ?? '',
-                    'successful' => isset($result['success']) ? $result['success'] : false,
-                    'processing_time_ms' => 0,
+                    'input' => $transcriptionText,
+                    'request_content' => $transcriptionText,
+                    'output' => $transcriptionText,
+                    'response_content' => $transcriptionText,
+                    'successful' => !empty($transcriptionText),
+                    'processing_time_ms' => $transcriptionDuration,
                     'metadata' => [
                         'language' => $language,
-                        'confidence' => $result['confidence'] ?? 0,
+                        'confidence' => $transcription['confidence'] ?? 0,
                     ],
                     'audio_url' => $audioUrl,
                     'audio_format' => $audioFile->getClientOriginalExtension(),
@@ -964,30 +1014,36 @@ class VoiceOrderController extends Controller
                 ];
                 
                 $logEntry = AIAssistantLog::create($logData);
+                $logId = $logEntry->id;
             }
             
             // Return the transcription result
             return response()->json([
-                'success' => true,
-                'text' => $result['transcription'] ?? '',
+                'success' => !empty($transcriptionText),
+                'text' => $transcriptionText,
+                'transcription' => $transcriptionText, // Include both formats for compatibility
                 'language' => $language,
-                'confidence' => $result['confidence'] ?? 0,
+                'confidence' => $transcription['confidence'] ?? 0,
                 'provider' => 'google_speech',
                 'audio_stored' => !empty($audioUrl),
-                'log_id' => $logEntry->id ?? null
+                'duration_ms' => $transcriptionDuration,
+                'log_id' => $logId
             ]);
             
         } catch (\Exception $e) {
-            Log::error('Transcription error in controller', [
+            \Log::error('Transcription error in controller', [
                 'error' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
                 'trace' => $e->getTraceAsString()
             ]);
             
             return response()->json([
                 'success' => false,
                 'error' => $e->getMessage(),
+                'error_type' => get_class($e),
                 'text' => '',
-                'language' => $language ?? 'en-US'
+                'language' => $request->input('language', 'en-US')
             ], 500);
         }
     }

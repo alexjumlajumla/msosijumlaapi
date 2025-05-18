@@ -575,37 +575,72 @@ class VoiceOrderService
      * 
      * @param array $data The voice order data including transcription, intent, etc.
      * @param User|null $user The authenticated user, if any
-     * @return VoiceOrder The created voice order
+     * @return VoiceOrder|null The created voice order or null if creation failed
      */
-    public function createVoiceOrder(array $data, ?User $user = null): VoiceOrder
+    public function createVoiceOrder(array $data, ?User $user = null): ?VoiceOrder
     {
-        // Prepare data for voice order model
-        $voiceOrderData = [
-            'user_id' => $user?->id,
-            'session_id' => $data['session_id'] ?? null,
-            'transcription_text' => $data['transcription'] ?? $data['transcription_text'] ?? null,
-            'intent_data' => $data['intent_data'] ?? null,
-            'filters_detected' => $data['filters_detected'] ?? null,
-            'product_ids' => $data['product_ids'] ?? null,
-            'recommendation_text' => $data['recommendation_text'] ?? null,
-            'audio_url' => $data['audio_url'] ?? null,
-            'audio_format' => $data['audio_format'] ?? null,
-            'status' => 'pending',
-            'processing_time_ms' => $data['processing_time_ms'] ?? null,
-            'confidence_score' => $data['confidence'] ?? null,
-            'log_id' => $data['log_id'] ?? null,
-        ];
-        
-        // Get audio duration if file path is provided and not already set
-        if (!isset($voiceOrderData['audio_duration']) && isset($data['audio_file_path'])) {
-            $voiceOrderData['audio_duration'] = $this->getAudioDuration($data['audio_file_path']);
+        try {
+            // Prepare data for voice order model with fallbacks for optional fields
+            $voiceOrderData = [
+                'user_id' => $user?->id,
+                'session_id' => $data['session_id'] ?? null,
+                'transcription_text' => $data['transcription_text'] ?? $data['transcription'] ?? null,
+                'intent_data' => $data['intent_data'] ?? null,
+                'filters_detected' => $data['filters_detected'] ?? null,
+                'product_ids' => $data['product_ids'] ?? null,
+                'recommendation_text' => $data['recommendation_text'] ?? null,
+                'audio_url' => $data['audio_url'] ?? null,
+                'audio_format' => $data['audio_format'] ?? 'unknown',
+                'status' => $data['status'] ?? 'pending',
+                'processing_time_ms' => $data['processing_time_ms'] ?? null,
+                'confidence_score' => $data['confidence'] ?? $data['confidence_score'] ?? null,
+                'log_id' => $data['log_id'] ?? null,
+                'shop_id' => $data['shop_id'] ?? null,
+                'currency_id' => $data['currency_id'] ?? null,
+                'address_id' => $data['address_id'] ?? null,
+                'delivery_type' => $data['delivery_type'] ?? 'delivery',
+            ];
+            
+            // Handle possible JSON encoding issues with arrays
+            foreach (['intent_data', 'filters_detected', 'product_ids', 'feedback'] as $field) {
+                if (isset($voiceOrderData[$field]) && is_array($voiceOrderData[$field])) {
+                    // Already an array, no need to encode or modify
+                } elseif (isset($voiceOrderData[$field]) && is_string($voiceOrderData[$field])) {
+                    // Try to decode if it's a string that might be JSON
+                    try {
+                        $decoded = json_decode($voiceOrderData[$field], true);
+                        if (json_last_error() === JSON_ERROR_NONE) {
+                            $voiceOrderData[$field] = $decoded;
+                        }
+                    } catch (\Exception $e) {
+                        // Keep as is if decode fails
+                        Log::warning("Failed to decode JSON for field {$field}", [
+                            'error' => $e->getMessage(),
+                            'value' => $voiceOrderData[$field]
+                        ]);
+                    }
+                }
+            }
+            
+            // Get audio duration if file path is provided and not already set
+            if (!isset($voiceOrderData['audio_duration']) && isset($data['audio_file_path'])) {
+                $voiceOrderData['audio_duration'] = $this->getAudioDuration($data['audio_file_path']);
+            }
+            
+            // Create and save the voice order
+            $voiceOrder = new VoiceOrder($voiceOrderData);
+            $voiceOrder->save();
+            
+            return $voiceOrder;
+        } catch (\Exception $e) {
+            Log::error('Voice order creation failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'data' => $data
+            ]);
+            
+            return null;
         }
-        
-        // Create and save the voice order
-        $voiceOrder = new VoiceOrder($voiceOrderData);
-        $voiceOrder->save();
-        
-        return $voiceOrder;
     }
     
     /**

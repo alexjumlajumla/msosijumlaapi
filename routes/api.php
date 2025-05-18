@@ -1992,3 +1992,12 @@ Route::prefix('voice-dialogue')->group(function () {
     Route::get('/cart', 'App\Http\Controllers\API\VoiceDialogueController@getCart');
     Route::post('/reset', 'App\Http\Controllers\API\VoiceDialogueController@resetDialogue');
 });
+
+// Voice Order API routes
+Route::post('voice/transcribe', [App\Http\Controllers\VoiceOrderController::class, 'transcribe']);
+Route::post('voice/process', [App\Http\Controllers\VoiceOrderController::class, 'processVoiceOrder']);
+Route::post('voice/feedback', [App\Http\Controllers\VoiceOrderController::class, 'processFeedback']);
+Route::get('voice/test', [App\Http\Controllers\VoiceOrderController::class, 'testTranscribe']);
+
+// Include voice test API route
+require __DIR__ . '/voice_test.php';

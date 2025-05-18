@@ -3,1785 +3,391 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Voice Order System Test</title>
-    <!-- Meta tag to prevent caching -->
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
+    <title>🎙️ Msosi Voice Assistant</title>
     <style>
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f7f9fc;
+            font-family: "Segoe UI", sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #f8f9fa;
+            color: #333;
         }
-        h1 {
-            color: #2d3748;
+
+        header {
+            background: #212529;
+            color: #fff;
+            padding: 1rem 2rem;
             text-align: center;
-            margin-bottom: 30px;
         }
-        .container {
-            background-color: white;
-            border-radius: 8px;
-            padding: 20px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+
+        main {
+            max-width: 900px;
+            margin: auto;
+            padding: 2rem 1rem;
         }
-        .controls {
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            margin-bottom: 30px;
+
+        .chatbox {
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            padding: 2rem;
         }
-        .button-group {
-            display: flex;
-            gap: 10px;
-        }
-        button {
-            padding: 10px 20px;
-            border: none;
-            border-radius: 4px;
-            font-weight: 600;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 120px;
-        }
-        button.primary {
-            background-color: #2563eb;
-            color: white;
-        }
-        button.secondary {
-            background-color: #e5e7eb;
-            color: #374151;
-        }
-        button.warning {
-            background-color: #ef4444;
-            color: white;
-        }
-        button:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
+
         .status {
-            padding: 10px;
-            border-radius: 4px;
-            margin-bottom: 20px;
-        }
-        .status.recording {
-            background-color: #fee2e2;
-            color: #b91c1c;
-        }
-        select {
-            padding: 10px;
-            border-radius: 4px;
-            border: 1px solid #d1d5db;
-        }
-        .result {
-            margin-top: 20px;
-            padding: 15px;
-            border: 1px solid #e5e7eb;
-            border-radius: 4px;
-            background-color: #f9fafb;
-        }
-        .result h3 {
-            margin-top: 0;
-            border-bottom: 1px solid #e5e7eb;
-            padding-bottom: 10px;
-            color: #4b5563;
-        }
-        .loading {
-            display: none;
-            text-align: center;
-            margin: 20px 0;
-        }
-        .loading.active {
-            display: block;
-        }
-        .spinner {
-            border: 4px solid rgba(0, 0, 0, 0.1);
-            border-left-color: #2563eb;
-            border-radius: 50%;
-            width: 24px;
-            height: 24px;
-            animation: spin 1s linear infinite;
-            margin: 0 auto;
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-        .badge {
-            font-size: 12px;
-            padding: 4px 8px;
-            border-radius: 9999px;
-            font-weight: 600;
-        }
-        .badge.success {
-            background-color: #dcfce7;
-            color: #166534;
-        }
-        .badge.error {
-            background-color: #fee2e2;
-            color: #b91c1c;
-        }
-        pre {
-            background-color: #f1f5f9;
-            border-radius: 4px;
-            padding: 12px;
-            overflow-x: auto;
-            color: #334155;
-        }
-        .real-time-transcript {
-            background-color: #f0f9ff;
-            border-left: 4px solid #2563eb;
-            padding: 10px 15px;
-            margin-top: 15px;
-            font-style: italic;
-        }
-        .products-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 16px;
-            margin-top: 20px;
-        }
-        .product-card {
-            border: 1px solid #e5e7eb;
+            margin-bottom: 1rem;
+            padding: 1rem;
             border-radius: 8px;
-            overflow: hidden;
-            transition: transform 0.2s, box-shadow 0.2s;
+            background: #e9ecef;
+            font-size: 0.95rem;
         }
-        .product-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 15px rgba(0,0,0,0.1);
+
+        .status.success {
+            background: #d4edda;
+            color: #155724;
         }
-        .product-image {
+
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .transcription, .recommendation {
+            margin-top: 1rem;
+            padding: 1rem;
+            border-left: 4px solid;
+            border-radius: 8px;
+        }
+
+        .transcription {
+            background: #e3f2fd;
+            border-color: #2196f3;
+        }
+
+        .recommendation {
+            background: #fff8e1;
+            border-color: #ffc107;
+        }
+
+        .product-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        .product-card {
+            background: white;
+            padding: 1rem;
+            border-radius: 10px;
+            text-align: center;
+            border: 1px solid #dee2e6;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .product-card img {
             width: 100%;
             height: 120px;
             object-fit: cover;
-            background-color: #f3f4f6;
+            border-radius: 8px;
         }
-        .product-info {
-            padding: 12px;
-        }
-        .product-title {
-            font-weight: 600;
-            margin-bottom: 4px;
-            color: #1f2937;
-        }
-        .product-price {
-            color: #2563eb;
-            font-weight: 700;
-        }
-        .product-description {
-            font-size: 14px;
-            color: #6b7280;
-            margin-top: 8px;
-            display: -webkit-box;
-            -webkit-line-clamp: 2;
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-        }
-        .audio-player {
-            margin-top: 15px;
-            width: 100%;
-        }
-        .login-section {
-            margin-bottom: 20px;
-            padding: 15px;
-            border: 1px solid #e5e7eb;
-            border-radius: 4px;
-            background-color: #f0f9ff;
-        }
-        .login-form {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        .login-form input {
-            padding: 8px;
-            border: 1px solid #d1d5db;
-            border-radius: 4px;
-        }
-        .add-to-cart {
-            background-color: #16a34a;
+
+        .mic-button {
+            margin: 1.5rem auto 0;
+            display: block;
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: #f44336;
             color: white;
-            margin-top: 10px;
-            width: 100%;
-            padding: 6px 12px;
-            font-size: 14px;
-        }
-        .flex-between {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        /* Dialogue System Styles */
-        .dialogue-section {
-            margin-top: 30px;
-        }
-        .dialogue-container {
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
-        }
-        .dialogue-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-        .dialogue-panel {
-            border: 1px solid #e5e7eb;
-            border-radius: 6px;
-            padding: 12px;
-            background-color: #ffffff;
-        }
-        .dialogue-panel h4 {
-            margin-top: 0;
-            margin-bottom: 10px;
-            font-size: 16px;
-            color: #4b5563;
-        }
-        .currency-display {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 10px;
-        }
-        .available-currencies {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-        .currency-option {
-            padding: 4px 8px;
-            border-radius: 4px;
-            background-color: #f3f4f6;
-            font-size: 14px;
+            font-size: 30px;
+            border: none;
             cursor: pointer;
+            transition: 0.3s;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
         }
-        .currency-option:hover {
-            background-color: #e5e7eb;
+
+        .mic-button:hover {
+            transform: scale(1.05);
         }
-        .currency-option.active {
-            background-color: #dbeafe;
-            font-weight: bold;
+
+        .mic-button:active {
+            transform: scale(0.98);
         }
-        .cart-items {
-            max-height: 200px;
-            overflow-y: auto;
-            margin-bottom: 10px;
+
+        .mic-button.recording {
+            animation: pulse 1.5s infinite;
+            background: #4CAF50;
         }
-        .cart-item {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid #f3f4f6;
-        }
-        .cart-item-name {
-            flex: 1;
-        }
-        .cart-item-quantity {
-            width: 40px;
+
+        .recording-status {
             text-align: center;
+            margin-top: 0.5rem;
+            font-size: 0.9rem;
+            color: #6c757d;
         }
-        .cart-item-price {
-            width: 80px;
-            text-align: right;
+
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+            margin-left: 10px;
+            vertical-align: middle;
         }
-        .cart-total {
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7); }
+            70% { box-shadow: 0 0 0 20px rgba(76, 175, 80, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(76, 175, 80, 0); }
+        }
+
+        footer {
+            text-align: center;
+            font-size: 0.85rem;
+            padding: 1rem;
+            color: #6c757d;
+            margin-top: 2rem;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        /* Dietary preferences badges */
+        .dietary-badges {
             display: flex;
-            justify-content: space-between;
-            font-weight: bold;
-            margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px solid #e5e7eb;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 1rem;
         }
-        .payment-methods {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-        .payment-method {
-            display: flex;
-            align-items: center;
-            padding: 8px 12px;
-            border: 1px solid #e5e7eb;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        .payment-method:hover {
-            background-color: #f9fafb;
-        }
-        .payment-method.selected {
-            background-color: #dbeafe;
-            border-color: #2563eb;
-        }
-        .payment-method-name {
-            flex: 1;
-        }
-        .dialogue-history {
-            max-height: 200px;
-            overflow-y: auto;
-        }
-        .dialogue-message {
-            margin-bottom: 8px;
-            padding: 8px;
-            border-radius: 4px;
-        }
-        .dialogue-message.user {
-            background-color: #dbeafe;
-            margin-left: 20px;
-        }
-        .dialogue-message.system {
-            background-color: #f3f4f6;
-            margin-right: 20px;
-        }
-        .small {
-            font-size: 12px;
-            padding: 4px 8px;
-            min-width: auto;
-        }
-        button.checkout-button {
-            background-color: #16a34a;
-            color: white;
-            width: 100%;
-            margin-top: 10px;
+        
+        .dietary-badge {
+            background: #e9f7ef;
+            color: #27ae60;
+            padding: 0.3rem 0.7rem;
+            border-radius: 1rem;
+            font-size: 0.8rem;
+            font-weight: 500;
         }
     </style>
 </head>
 <body>
-    <h1>Voice Order System Test</h1>
-    
-    <div class="container">
-        <!-- Authentication Section -->
-        <div class="login-section" id="authSection">
-            <h3>Authentication</h3>
-            <div id="loginForm" class="login-form">
-                <input type="email" id="email" placeholder="Email" required>
-                <input type="password" id="password" placeholder="Password" required>
-                <button id="loginButton" class="primary">Login</button>
-            </div>
-            <div id="userInfo" style="display: none;">
-                <div class="flex-between">
-                    <p>Logged in as: <strong id="userEmail"></strong></p>
-                    <button id="logoutButton" class="secondary">Logout</button>
-                </div>
-                <p>Voice credits: <span id="voiceCredits">5</span> remaining</p>
-            </div>
-        </div>
+
+<header>
+    <h1>🎙️ Msosi Voice Assistant</h1>
+    <p>Say your order — "I'd like a veggie burger with fries"</p>
+</header>
+
+<main>
+    <div class="chatbox">
+        <div class="status" id="status">Ready to listen for your order.</div>
         
-        <div class="controls">
-            <div>
-                <label for="language">Select Language:</label>
-                <select id="language">
-                    <option value="en-US">English (US)</option>
-                    <option value="es-ES">Spanish</option>
-                    <option value="fr-FR">French</option>
-                    <option value="sw-TZ">Swahili</option>
-                    <option value="ar-SA">Arabic</option>
-                    <option value="zh-CN">Chinese (Simplified)</option>
-                </select>
-            </div>
-            
-            <div id="recordingStatus" class="status" style="display: none;">
-                <strong>Recording...</strong> (Click "Stop" when finished)
-            </div>
-            
-            <div id="realTimeTranscript" class="real-time-transcript" style="display: none;">
-                Listening...
-            </div>
-            
-            <div class="button-group">
-                <button id="startButton" class="primary">Start Recording</button>
-                <button id="stopButton" class="warning" disabled>Stop Recording</button>
-                <button id="manualProcessButton" class="secondary" style="display: none;">Process Manually</button>
-            </div>
-        </div>
+        <button id="micButton" class="mic-button">🎤</button>
+        <p id="recordingStatus" class="recording-status">Click to start recording</p>
         
-        <div id="loading" class="loading">
-            <div class="spinner"></div>
-            <p>Processing voice recording...</p>
-        </div>
-        
-        <div id="resultContainer" style="display: none;">
-            <div class="result">
-                <h3>Transcription <span id="transcriptionStatus" class="badge"></span></h3>
-                <p id="transcriptionResult"></p>
-                <div id="audioPlayerContainer" style="display: none;">
-                    <h4>Recorded Audio</h4>
-                    <audio id="audioPlayer" controls class="audio-player"></audio>
-                    <p><small>Audio file saved to S3 bucket: <span id="audioFileUrl"></span></small></p>
-                </div>
-            </div>
-            
-            <div class="result">
-                <h3>AI Recommendation <span id="openaiStatus" class="badge"></span></h3>
-                <p id="aiRecommendation"></p>
-                <pre id="openaiResult" style="display: none;"></pre>
-                <button id="showJsonButton" class="secondary" style="margin-top: 10px; font-size: 12px;">Show Raw JSON</button>
-            </div>
-            
-            <div class="result">
-                <h3>Product Recommendations</h3>
-                <div id="productsContainer" class="products-grid">
-                    <!-- Products will be inserted here -->
-                </div>
-            </div>
-            
-            <!-- Voice Dialogue Section (NEW) -->
-            <div class="result dialogue-section">
-                <h3>Voice Dialogue System</h3>
-                
-                <div id="dialogueStateContainer" class="dialogue-container">
-                    <div class="dialogue-header">
-                        <span class="badge" id="dialogueStep">Initial</span>
-                        <button id="resetDialogueButton" class="secondary small">Reset Dialogue</button>
-                    </div>
-                    
-                    <!-- Active Currency -->
-                    <div class="dialogue-panel">
-                        <h4>Active Currency</h4>
-                        <div id="activeCurrencyDisplay" class="currency-display">
-                            <span id="currencyName">US Dollar</span>
-                            <span id="currencyCode" class="badge success">USD</span>
-                        </div>
-                        <div class="available-currencies" id="availableCurrencies">
-                            <span class="currency-option" data-code="USD">USD</span>
-                            <span class="currency-option" data-code="EUR">EUR</span>
-                            <span class="currency-option" data-code="GBP">GBP</span>
-                            <span class="currency-option" data-code="TZS">TZS</span>
-                        </div>
-                    </div>
-                    
-                    <!-- Update the Order Settings panel to add input fields -->
-                    <div class="dialogue-panel">
-                        <h4>Order Settings</h4>
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
-                            <div>
-                                <strong>Shop ID:</strong>
-                                <span id="currentShopId">Not set</span>
-                            </div>
-                            <div>
-                                <strong>Address ID:</strong>
-                                <span id="currentAddressId">Not set</span>
-                            </div>
-                            <div>
-                                <strong>Deliveryman ID:</strong>
-                                <span id="currentDeliverymanId">Not set</span>
-                            </div>
-                            <div>
-                                <strong>Delivery Type:</strong>
-                                <span id="currentDeliveryType">delivery</span>
-                            </div>
-                        </div>
-                        
-                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px;">
-                            <div>
-                                <label for="settingsShopId">Shop ID:</label>
-                                <input type="number" id="settingsShopId" style="width: 60px;" placeholder="ID">
-                                <button id="setShopId" class="secondary small">Set</button>
-                            </div>
-                            <div>
-                                <label for="settingsAddressId">Address ID:</label>
-                                <input type="number" id="settingsAddressId" style="width: 60px;" placeholder="ID">
-                                <button id="setAddressId" class="secondary small">Set</button>
-                            </div>
-                            <div>
-                                <label for="settingsDeliverymanId">Deliveryman ID:</label>
-                                <input type="number" id="settingsDeliverymanId" style="width: 60px;" placeholder="ID">
-                                <button id="setDeliverymanId" class="secondary small">Set</button>
-                            </div>
-                            <div>
-                                <label for="settingsDeliveryType">Delivery Type:</label>
-                                <select id="settingsDeliveryType">
-                                    <option value="delivery">Delivery</option>
-                                    <option value="pickup">Pickup</option>
-                                    <option value="dine-in">Dine-in</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Shopping Cart -->
-                    <div class="dialogue-panel">
-                        <h4>Shopping Cart</h4>
-                        <div id="cartItemsContainer" class="cart-items">
-                            <!-- Cart items will be displayed here -->
-                            <p id="emptyCartMessage">Your cart is empty. Try ordering something!</p>
-                        </div>
-                        <div id="cartTotalContainer" class="cart-total">
-                            <span>Total:</span>
-                            <span id="cartTotal">$0.00</span>
-                        </div>
-                    </div>
-                    
-                    <!-- Payment Methods -->
-                    <div class="dialogue-panel">
-                        <h4>Payment Methods</h4>
-                        <div id="paymentMethodsContainer" class="payment-methods">
-                            <!-- Payment methods will be displayed here -->
-                        </div>
-                    </div>
-                    
-                    <!-- Dialogue History -->
-                    <div class="dialogue-panel">
-                        <h4>Dialogue History</h4>
-                        <div id="dialogueHistory" class="dialogue-history">
-                            <!-- Dialogue history will be added here -->
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Direct API test section -->
-        <div class="result" style="margin-top: 30px;">
-            <h3>Direct API Test</h3>
-            <p>Test the API endpoint directly with this form:</p>
-            <form id="directApiForm" enctype="multipart/form-data">
-                <div style="margin-bottom: 15px;">
-                    <label for="directAudioFile">Select audio file: </label>
-                    <input type="file" id="directAudioFile" name="audio" accept="audio/*">
-                </div>
-                <div style="margin-bottom: 15px;">
-                    <label for="directLanguage">Language: </label>
-                    <select id="directLanguage" name="language">
-                        <option value="en-US">English (US)</option>
-                        <option value="es-ES">Spanish</option>
-                        <option value="fr-FR">French</option>
-                        <option value="sw-TZ">Swahili</option>
-                    </select>
-                </div>
-                
-                <!-- New fields for foreign keys -->
-                <div style="margin-bottom: 15px;">
-                    <label for="shopId">Shop ID: </label>
-                    <input type="number" id="shopId" name="shop_id" placeholder="Optional shop ID">
-                </div>
-                <div style="margin-bottom: 15px;">
-                    <label for="currencyId">Currency ID: </label>
-                    <input type="number" id="currencyId" name="currency_id" placeholder="Optional currency ID">
-                </div>
-                <div style="margin-bottom: 15px;">
-                    <label for="addressId">Address ID: </label>
-                    <input type="number" id="addressId" name="address_id" placeholder="Optional address ID">
-                </div>
-                <div style="margin-bottom: 15px;">
-                    <label for="deliverymanId">Deliveryman ID: </label>
-                    <input type="number" id="deliverymanId" name="deliveryman_id" placeholder="Optional deliveryman ID">
-                </div>
-                <div style="margin-bottom: 15px;">
-                    <label for="deliveryType">Delivery Type: </label>
-                    <select id="deliveryType" name="delivery_type">
-                        <option value="delivery">Delivery</option>
-                        <option value="pickup">Pickup</option>
-                        <option value="dine-in">Dine-in</option>
-                    </select>
-                </div>
-                
-                <button type="submit" class="primary">Submit Direct Test</button>
-            </form>
+        <div id="transcriptionContainer" class="transcription hidden">
+            <strong>Transcription:</strong>
+            <p id="transcriptionText"></p>
         </div>
 
-        <!-- Add a debug section at the end of the results container -->
-        <div class="result" style="margin-top: 20px;">
-            <h3>API Debug Information</h3>
-            <div>
-                <button id="testApiConnection" class="secondary">Test API Connection</button>
-                <div id="apiConnectionResult" style="margin-top: 10px; padding: 10px; background-color: #f3f4f6;"></div>
-            </div>
-            <pre id="apiDebugInfo" style="margin-top: 10px; max-height: 200px; overflow-y: auto;"></pre>
+        <div id="recommendationContainer" class="recommendation hidden">
+            <strong>AI Recommendation:</strong>
+            <p id="recommendationText"></p>
+            <div id="dietaryBadges" class="dietary-badges hidden"></div>
         </div>
+
+        <div id="productsContainer" class="product-list"></div>
     </div>
+</main>
 
-    <script>
-        // DOM elements
-        const startButton = document.getElementById('startButton');
-        const stopButton = document.getElementById('stopButton');
-        const manualProcessButton = document.getElementById('manualProcessButton');
-        const recordingStatus = document.getElementById('recordingStatus');
-        const loadingIndicator = document.getElementById('loading');
-        const resultContainer = document.getElementById('resultContainer');
-        const transcriptionResult = document.getElementById('transcriptionResult');
-        const openaiResult = document.getElementById('openaiResult');
-        const aiRecommendation = document.getElementById('aiRecommendation');
-        const showJsonButton = document.getElementById('showJsonButton');
-        const transcriptionStatus = document.getElementById('transcriptionStatus');
-        const openaiStatus = document.getElementById('openaiStatus');
-        const languageSelect = document.getElementById('language');
-        const directApiForm = document.getElementById('directApiForm');
-        const productsContainer = document.getElementById('productsContainer');
-        const realTimeTranscript = document.getElementById('realTimeTranscript');
-        const audioPlayer = document.getElementById('audioPlayer');
-        const audioPlayerContainer = document.getElementById('audioPlayerContainer');
-        const audioFileUrl = document.getElementById('audioFileUrl');
-        
-        // Auth elements
-        const loginForm = document.getElementById('loginForm');
-        const userInfo = document.getElementById('userInfo');
-        const userEmail = document.getElementById('userEmail');
-        const voiceCredits = document.getElementById('voiceCredits');
-        const loginButton = document.getElementById('loginButton');
-        const logoutButton = document.getElementById('logoutButton');
-        
-        // MediaRecorder variables
-        let mediaRecorder;
-        let audioChunks = [];
-        let audioBlob;
-        let stream;
-        let session_id = generateSessionId();
-        
-        // Auth variables
-        let authToken = localStorage.getItem('auth_token');
-        let isAuthenticated = !!authToken;
-        
-        // Check authentication status on load
-        checkAuthStatus();
-        
-        // Real-time transcription
-        let recognitionEnabled = 'webkitSpeechRecognition' in window || 'SpeechRecognition' in window;
-        let recognition;
-        
-        // Initialize speech recognition if available
-        if (recognitionEnabled) {
-            recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-            recognition.continuous = true;
-            recognition.interimResults = true;
+<footer>
+    Powered by MsosiApp AI • JumlaJumla © 2025
+</footer>
+
+<script>
+    let mediaRecorder, audioChunks = [];
+    let isRecording = false;
+    let sessionId = 'web-' + Date.now();
+    
+    const micButton = document.getElementById('micButton');
+    const recordingStatus = document.getElementById('recordingStatus');
+    const statusEl = document.getElementById('status');
+    const transcriptionText = document.getElementById('transcriptionText');
+    const transcriptionContainer = document.getElementById('transcriptionContainer');
+    const recommendationText = document.getElementById('recommendationText');
+    const recommendationContainer = document.getElementById('recommendationContainer');
+    const productsContainer = document.getElementById('productsContainer');
+    const dietaryBadges = document.getElementById('dietaryBadges');
+
+    micButton.addEventListener('click', toggleRecording);
+
+    function toggleRecording() {
+        isRecording ? stopRecording() : startRecording();
+    }
+
+    async function startRecording() {
+        try {
+            // Reset UI
+            transcriptionContainer.classList.add('hidden');
+            recommendationContainer.classList.add('hidden');
+            dietaryBadges.classList.add('hidden');
+            productsContainer.innerHTML = '';
             
-            recognition.onresult = function(event) {
-                let interimTranscript = '';
-                let finalTranscript = '';
-                
-                for (let i = event.resultIndex; i < event.results.length; i++) {
-                    if (event.results[i].isFinal) {
-                        finalTranscript += event.results[i][0].transcript;
-                    } else {
-                        interimTranscript += event.results[i][0].transcript;
-                    }
-                }
-                
-                realTimeTranscript.innerHTML = finalTranscript + '<i style="color:#888">' + interimTranscript + '</i>';
-            };
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            mediaRecorder = new MediaRecorder(stream);
+            audioChunks = [];
             
-            recognition.onerror = function(event) {
-                console.error('Speech recognition error', event.error);
-                if (event.error === 'language-not-supported') {
-                    // Fall back to English if selected language is not supported
-                    recognition.lang = 'en-US';
-                    realTimeTranscript.innerHTML = '<i style="color:red">Selected language not supported by browser. Falling back to English.</i>';
-                }
-            };
-        }
-        
-        // Authentication functions
-        function checkAuthStatus() {
-            if (isAuthenticated) {
-                // Show user info
-                loginForm.style.display = 'none';
-                userInfo.style.display = 'block';
-                
-                // Fetch user details
-                fetchUserProfile();
-            } else {
-                loginForm.style.display = 'block';
-                userInfo.style.display = 'none';
-            }
-        }
-        
-        async function fetchUserProfile() {
-            try {
-                const response = await fetch('/api/v1/dashboard/user/profile/show', {
-                    headers: {
-                        'Authorization': `Bearer ${authToken}`,
-                        'Accept': 'application/json'
-                    }
-                });
-                
-                if (response.ok) {
-                    const userData = await response.json();
-                    userEmail.textContent = userData.data.email || 'User';
-                    voiceCredits.textContent = userData.data.voice_credits || '5';
-                } else {
-                    // Invalid token, log out
-                    logout();
-                }
-            } catch (error) {
-                console.error('Error fetching user profile:', error);
-            }
-        }
-        
-        function logout() {
-            localStorage.removeItem('auth_token');
-            authToken = null;
-            isAuthenticated = false;
-            checkAuthStatus();
-        }
-        
-        // Login event listener
-        loginButton.addEventListener('click', async () => {
-            const email = document.getElementById('email').value;
-            const password = document.getElementById('password').value;
+            mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+            mediaRecorder.onstop = processAudio;
             
-            if (!email || !password) {
-                alert('Please enter both email and password');
-                return;
-            }
+            mediaRecorder.start();
+            isRecording = true;
             
-            try {
-                const response = await fetch('/api/v1/auth/login', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({ email, password })
-                });
-                
-                const data = await response.json();
-                
-                if (data.access_token) {
-                    // Save token and update UI
-                    localStorage.setItem('auth_token', data.access_token);
-                    authToken = data.access_token;
-                    isAuthenticated = true;
-                    checkAuthStatus();
-                } else {
-                    alert('Login failed: ' + (data.message || 'Invalid credentials'));
-                }
-            } catch (error) {
-                console.error('Login error:', error);
-                alert('Login failed: Network error');
-            }
-        });
-        
-        // Logout event listener
-        logoutButton.addEventListener('click', logout);
-        
-        // Generate a unique session ID
-        function generateSessionId() {
-            return 'voice_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+            micButton.classList.add('recording');
+            recordingStatus.textContent = 'Recording... Click to stop';
+            statusEl.textContent = '🎙️ Listening...';
+            statusEl.className = 'status';
+        } catch (err) {
+            statusEl.textContent = '❌ Microphone access denied: ' + err.message;
+            statusEl.className = 'status error';
+            console.error('Error accessing microphone:', err);
         }
-        
-        // Start recording function
-        startButton.addEventListener('click', async () => {
-            try {
-                stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                
-                mediaRecorder = new MediaRecorder(stream);
-                audioChunks = [];
-                
-                mediaRecorder.addEventListener('dataavailable', event => {
-                    audioChunks.push(event.data);
-                });
-                
-                mediaRecorder.addEventListener('stop', () => {
-                    audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                    
-                    // Create audio URL for playback
-                    const audioURL = URL.createObjectURL(audioBlob);
-                    audioPlayer.src = audioURL;
-                    
-                    // Auto-process the recording
-                    processRecording();
-                });
-                
-                mediaRecorder.start();
-                session_id = generateSessionId(); // Generate new session ID for this recording
-                
-                // Start real-time transcription if available
-                if (recognitionEnabled) {
-                    recognition.lang = languageSelect.value;
-                    recognition.start();
-                    realTimeTranscript.style.display = 'block';
-                }
-                
-                // Update UI
-                startButton.disabled = true;
-                stopButton.disabled = false;
-                recordingStatus.style.display = 'block';
-                resultContainer.style.display = 'none';
-                
-            } catch (error) {
-                console.error('Error starting recording:', error);
-                alert('Error starting recording: ' + error.message);
-            }
-        });
-        
-        // Stop recording function
-        stopButton.addEventListener('click', () => {
+    }
+
+    function stopRecording() {
+        if (mediaRecorder && isRecording) {
             mediaRecorder.stop();
+            isRecording = false;
             
-            // Stop real-time transcription
-            if (recognitionEnabled && recognition) {
-                recognition.stop();
-            }
-            
-            // Stop all tracks in the stream
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-            }
-            
-            // Update UI
-            startButton.disabled = false;
-            stopButton.disabled = true;
-            recordingStatus.style.display = 'none';
-            loadingIndicator.classList.add('active');
-        });
-        
-        // Replace the original processRecording function
-        async function processRecording() {
-            // Show loading indicator
-            loadingIndicator.style.display = 'block';
-            resultContainer.style.display = 'none';
-            
-            // Create audio blob from chunks
-            audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-            
-            // Create audio URL for playback
-            const audioUrl = URL.createObjectURL(audioBlob);
-            audioPlayer.src = audioUrl;
-            audioPlayerContainer.style.display = 'block';
-            
-            // Create FormData and append audio file
-            const formData = new FormData();
-            formData.append('audio', audioBlob, 'recording.webm');
-            formData.append('language', languageSelect.value);
-            formData.append('session_id', session_id);
-            
-            // Add new foreign key fields
-            if (dialogueState.shop_id) formData.append('shop_id', dialogueState.shop_id);
-            if (dialogueState.currency_id) formData.append('currency_id', dialogueState.currency_id);
-            if (dialogueState.address_id) formData.append('address_id', dialogueState.address_id);
-            if (dialogueState.deliveryman_id) formData.append('deliveryman_id', dialogueState.deliveryman_id);
-            formData.append('delivery_type', dialogueState.delivery_type || 'delivery');
-            
-            try {
-                // Use the correct API endpoint
-                const response = await fetch('/api/v1/voice-order', {
-                    method: 'POST', 
-                    body: formData,
-                    headers: {
-                        'Accept': 'application/json',
-                        ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-                    }
-                });
-                
-                // Log the response for debugging
-                console.log('API Response Status:', response.status, response.statusText);
-                document.getElementById('apiDebugInfo').textContent = 
-                    `Last API Call: POST /api/v1/voice-order\n` +
-                    `Status: ${response.status} ${response.statusText}\n` +
-                    `Time: ${new Date().toLocaleTimeString()}`;
-                
-                if (!response.ok) {
-                    throw new Error(`Server responded with ${response.status}: ${response.statusText}`);
-                }
-                
-                const result = await response.json();
-                
-                // Log the result for debugging
-                console.log('API Response Data:', result);
-                
-                // Always show the transcription in the main UI
-                if (result.transcription) {
-                    transcriptionResult.textContent = result.transcription.text;
-                    transcriptionStatus.textContent = result.transcription.confidence > 0.7 ? 'High Confidence' : 'Low Confidence';
-                    transcriptionStatus.className = 'badge ' + (result.transcription.confidence > 0.7 ? 'success' : 'error');
-                } else {
-                    transcriptionResult.textContent = 'No transcription available';
-                    transcriptionStatus.textContent = 'Failed';
-                    transcriptionStatus.className = 'badge error';
-                }
-                
-                // Handle result
-                if (result.success) {
-                    handleDialogueVoiceResult(result);
-                    
-                    // If we have product recommendations, show them
-                    if (result.products && result.products.length > 0) {
-                        renderProducts(result.products);
-                    }
-                    
-                    // Show any AI recommendation
-                    if (result.ai_response) {
-                        aiRecommendation.textContent = result.ai_response.text || 'No recommendation available';
-                        openaiStatus.textContent = 'Success';
-                        openaiStatus.className = 'badge success';
-                        openaiResult.textContent = JSON.stringify(result.ai_response, null, 2);
-                    } else {
-                        aiRecommendation.textContent = result.message || 'No recommendation available';
-                        openaiStatus.textContent = 'Success';
-                        openaiStatus.className = 'badge success';
-                        openaiResult.textContent = JSON.stringify(result, null, 2);
-                    }
-                } else {
-                    // If API failed, show error message
-                    addDialogueMessage('system', 'Error: ' + (result.message || 'Failed to process voice command'));
-                    
-                    // Show error in main UI
-                    aiRecommendation.textContent = result.message || 'Processing failed';
-                    openaiStatus.textContent = 'Failed';
-                    openaiStatus.className = 'badge error';
-                    openaiResult.textContent = JSON.stringify(result, null, 2);
-                }
-                
-                // Show results
-                resultContainer.style.display = 'block';
-                
-            } catch (error) {
-                console.error('Error processing recording:', error);
-                
-                // Show error in dialogue history
-                addDialogueMessage('system', 'Error: Failed to process voice command. ' + error.message);
-                
-                // Display error in main UI
-                transcriptionResult.textContent = 'Error: ' + error.message;
-                transcriptionStatus.textContent = 'Failed';
-                transcriptionStatus.className = 'badge error';
-                resultContainer.style.display = 'block';
-            } finally {
-                loadingIndicator.style.display = 'none';
-            }
+            micButton.classList.remove('recording');
+            recordingStatus.textContent = 'Processing...';
+            recordingStatus.innerHTML += ' <div class="loader"></div>';
+            statusEl.textContent = 'Processing your order...';
         }
+    }
 
-        // Toggle JSON display
-        showJsonButton.addEventListener('click', () => {
-            const isVisible = openaiResult.style.display !== 'none';
-            openaiResult.style.display = isVisible ? 'none' : 'block';
-            showJsonButton.textContent = isVisible ? 'Show Raw JSON' : 'Hide Raw JSON';
-        });
-        
-        // Direct API form submission
-        directApiForm.addEventListener('submit', async (event) => {
-            event.preventDefault();
+    async function processAudio() {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const formData = new FormData();
+        formData.append('audio', audioBlob, 'recording.webm');
+        formData.append('session_id', sessionId);
+        formData.append('language', 'en-US');
+
+        try {
+            statusEl.textContent = 'Sending audio for processing...';
             
-            const audioFile = document.getElementById('directAudioFile').files[0];
-            if (!audioFile) {
-                alert('Please select an audio file');
-                return;
-            }
-            
-            // Show loading indicator
-            loadingIndicator.classList.add('active');
-            resultContainer.style.display = 'none';
-            
-            // Update debug info
-            const debugInfo = document.getElementById('apiDebugInfo');
-            debugInfo.textContent = `Starting direct API test with file: ${audioFile.name}\nSize: ${audioFile.size} bytes\nType: ${audioFile.type}\nTime: ${new Date().toLocaleTimeString()}`;
-            
+            // Try the primary endpoint first, fall back to test endpoint if needed
+            let response;
             try {
-                const formData = new FormData();
-                formData.append('audio', audioFile);
-                formData.append('language', document.getElementById('directLanguage').value);
-                formData.append('session_id', session_id);
-                
-                // Add new foreign key fields
-                const shopId = document.getElementById('shopId').value;
-                const currencyId = document.getElementById('currencyId').value;
-                const addressId = document.getElementById('addressId').value;
-                const deliverymanId = document.getElementById('deliverymanId').value;
-                const deliveryType = document.getElementById('deliveryType').value;
-                
-                if (shopId) formData.append('shop_id', shopId);
-                if (currencyId) formData.append('currency_id', currencyId);
-                if (addressId) formData.append('address_id', addressId);
-                if (deliverymanId) formData.append('deliveryman_id', deliverymanId);
-                formData.append('delivery_type', deliveryType);
-                
-                // Log the form data for debugging
-                debugInfo.textContent += '\n\nForm data sent:';
-                for (let [key, value] of formData.entries()) {
-                    if (key !== 'audio') { // Don't log the audio data itself
-                        debugInfo.textContent += `\n- ${key}: ${value}`;
-                    }
-                }
-                debugInfo.textContent += '\n- audio: [binary data]';
-                
-                // Add headers with authentication if available
-                const headers = {
-                    'Accept': 'application/json'
-                };
-                
-                if (authToken) {
-                    headers['Authorization'] = `Bearer ${authToken}`;
-                    debugInfo.textContent += '\nAuth: Bearer token included';
-                } else {
-                    debugInfo.textContent += '\nAuth: No authentication';
-                }
-                
-                // Make the API call
-                debugInfo.textContent += '\n\nSending request to /api/v1/voice-order...';
-                
-                const response = await fetch('/api/v1/voice-order', {
+                response = await fetch('/api/voice/process', {
                     method: 'POST',
-                    headers: headers,
+                    body: formData,
+                    credentials: 'include'
+                });
+            } catch (error) {
+                console.warn('Primary endpoint failed, trying fallback:', error);
+                response = await fetch('/api/voice-test-api', {
+                    method: 'POST',
                     body: formData
                 });
+            }
+            
+            const data = await response.json();
+
+            if (data.success) {
+                // Display transcription
+                transcriptionText.textContent = data.transcription || data.text || 'N/A';
+                transcriptionContainer.classList.remove('hidden');
                 
-                // Log response status
-                debugInfo.textContent += `\nResponse status: ${response.status} ${response.statusText}`;
-                
-                const result = await response.json();
-                
-                // Log response data
-                debugInfo.textContent += `\nResponse received at: ${new Date().toLocaleTimeString()}`;
-                
-                // Hide loading indicator
-                loadingIndicator.classList.remove('active');
-                
-                // Display results (reusing the same UI elements)
-                transcriptionResult.textContent = result.transcription?.text || 'No transcription available';
-                transcriptionStatus.textContent = result.success ? 'Success' : 'Error';
-                transcriptionStatus.className = 'badge ' + (result.success ? 'success' : 'error');
-                
-                // Show recommendation text
-                aiRecommendation.textContent = result.message || 'No recommendation available';
-                
-                // Show raw JSON for debugging
-                openaiResult.textContent = JSON.stringify(result, null, 2);
-                openaiStatus.textContent = result.success ? 'Success' : 'Error';
-                openaiStatus.className = 'badge ' + (result.success ? 'success' : 'error');
-                
-                // Update dialogue state
-                if (result.dialogue_state) {
-                    dialogueState = result.dialogue_state;
-                    updateDialogueState();
+                // Display recommendation
+                if (data.recommendation_text) {
+                    recommendationText.textContent = data.recommendation_text;
+                    recommendationContainer.classList.remove('hidden');
+                } else if (data.openai_analysis) {
+                    // Handle test API format
+                    const messageContent = data.openai_analysis.choices[0].message.content;
+                    recommendationText.textContent = messageContent;
+                    recommendationContainer.classList.remove('hidden');
                 }
                 
-                // Show results container
-                resultContainer.style.display = 'block';
-            } catch (error) {
-                console.error('Error in direct API test:', error);
-                debugInfo.textContent += `\n\nERROR: ${error.message}`;
-                alert('Error calling API: ' + error.message);
-                loadingIndicator.classList.remove('active');
-                
-                // Show error in results
-                transcriptionResult.textContent = 'Error: ' + error.message;
-                transcriptionStatus.textContent = 'Failed';
-                transcriptionStatus.className = 'badge error';
-                resultContainer.style.display = 'block';
-            }
-        });
-        
-        // Function to display products
-        function displayProducts(products) {
-            productsContainer.innerHTML = '';
-            
-            if (!products.length) {
-                productsContainer.innerHTML = '<p>No products found matching your request.</p>';
-                return;
-            }
-            
-            products.forEach(product => {
-                const productCard = document.createElement('div');
-                productCard.className = 'product-card';
-                
-                // Default image if none available
-                const imageUrl = product.img ? `/storage/${product.img}` : 'https://via.placeholder.com/150?text=Food';
-                
-                // Get product name
-                const productName = product.translation ? product.translation.title : product.title || 'Unnamed Product';
-                
-                // Get product description
-                const productDesc = product.translation ? product.translation.description : product.description || '';
-                
-                // Get price from stocks if available
-                const price = product.stocks && product.stocks.length > 0 ? 
-                    product.stocks[0].price : product.price || 0;
-                
-                productCard.innerHTML = `
-                    <img src="${imageUrl}" alt="${productName}" class="product-image" onerror="this.src='https://via.placeholder.com/150?text=Food'">
-                    <div class="product-info">
-                        <div class="product-title">${productName}</div>
-                        <div class="product-price">$${parseFloat(price).toFixed(2)}</div>
-                        <div class="product-description">${productDesc}</div>
-                        <button class="add-to-cart" data-product-id="${product.id}">Add to Cart</button>
-                    </div>
-                `;
-                
-                productsContainer.appendChild(productCard);
-            });
-            
-            // Add event listeners to add-to-cart buttons
-            document.querySelectorAll('.add-to-cart').forEach(button => {
-                button.addEventListener('click', function() {
-                    const productId = this.getAttribute('data-product-id');
-                    addToCart(productId);
-                });
-            });
-        }
-        
-        // Function to add product to cart
-        async function addToCart(productId) {
-            if (!isAuthenticated) {
-                alert('Please log in to add items to your cart');
-                return;
-            }
-            
-            try {
-                const response = await fetch('/api/v1/rest/cart/insert-product', {
-                    method: 'POST',
-                    headers: {
-                        'Authorization': `Bearer ${authToken}`,
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        product_id: productId,
-                        quantity: 1
-                    })
-                });
-                
-                const result = await response.json();
-                
-                if (result.success) {
-                    alert('Product added to cart!');
-                } else {
-                    alert('Failed to add product to cart: ' + result.message);
+                // Display dietary preferences if any
+                if (data.dietary_preferences && data.dietary_preferences.length > 0) {
+                    displayDietaryPreferences(data.dietary_preferences);
                 }
-            } catch (error) {
-                console.error('Error adding to cart:', error);
-                alert('Error adding product to cart');
-            }
-        }
-
-        // Add this function to the voice test page to check the OpenAI configuration
-        function checkOpenAIConfig() {
-            fetch('/api/debug-openai-config')
-                .then(response => response.json())
-                .then(data => {
-                    const debugElement = document.getElementById('openai-debug') || document.createElement('div');
-                    debugElement.id = 'openai-debug';
-                    debugElement.innerHTML = `
-                        <h3>OpenAI Configuration Debug</h3>
-                        <pre>${JSON.stringify(data, null, 2)}</pre>
-                    `;
-                    document.body.appendChild(debugElement);
-                })
-                .catch(error => {
-                    console.error('Failed to fetch OpenAI config:', error);
-                });
-        }
-
-        // Add this button to the UI
-        // Add this near the end of your body, before the closing </body> tag
-        document.addEventListener('DOMContentLoaded', function() {
-            const buttonContainer = document.createElement('div');
-            buttonContainer.style.marginTop = '20px';
-            
-            const debugButton = document.createElement('button');
-            debugButton.textContent = 'Debug OpenAI Config';
-            debugButton.onclick = checkOpenAIConfig;
-            debugButton.className = 'btn btn-secondary';
-            
-            buttonContainer.appendChild(debugButton);
-            
-            // Find the results container and add the button after it
-            const resultsContainer = document.querySelector('.results-container');
-            if (resultsContainer) {
-                resultsContainer.parentNode.insertBefore(buttonContainer, resultsContainer.nextSibling);
+                
+                // Display product recommendations
+                if (data.recommendations && data.recommendations.length > 0) {
+                    displayProducts(data.recommendations);
+                }
+                
+                statusEl.textContent = '✅ Voice order processed successfully!';
+                statusEl.className = 'status success';
             } else {
-                document.body.appendChild(buttonContainer);
+                statusEl.textContent = data.message || '❌ Something went wrong.';
+                statusEl.className = 'status error';
             }
+            
+            // Reset recording status
+            recordingStatus.textContent = 'Click to start recording';
+            
+        } catch (e) {
+            console.error('Error processing audio:', e);
+            statusEl.textContent = '❌ Network or server error: ' + e.message;
+            statusEl.className = 'status error';
+            recordingStatus.textContent = 'Click to start recording';
+        }
+    }
+
+    function displayProducts(products) {
+        productsContainer.innerHTML = '';
+        
+        products.forEach(p => {
+            const card = document.createElement('div');
+            card.className = 'product-card';
+            
+            // Use placeholder if no image
+            const img = p.image_url || 'https://via.placeholder.com/150?text=Food';
+            
+            card.innerHTML = `
+                <img src="${img}" alt="${p.name || 'Food'}" />
+                <div class="name"><strong>${p.name || 'Item'}</strong></div>
+                <div class="price">${p.price ? '$' + parseFloat(p.price).toFixed(2) : ''}</div>
+            `;
+            
+            productsContainer.appendChild(card);
         });
-
-        // Add dialogue system logic
-        let dialogueState = {
-            step: 'initial',
-            cart: [],
-            products: [],
-            selected_payment: null,
-            currency: {
-                code: 'USD',
-                name: 'US Dollar',
-                symbol: '$',
-                rate: 1.0
-            },
-            shop_id: null,
-            currency_id: 1, // Default currency ID (USD)
-            address_id: null,
-            deliveryman_id: null,
-            delivery_type: 'delivery',
-            session_id: generateSessionId()
-        };
-
-        // Payment methods data
-        const paymentMethods = [
-            { id: 1, name: 'Credit Card', code: 'card' },
-            { id: 2, name: 'PayPal', code: 'paypal' },
-            { id: 3, name: 'Cash on Delivery', code: 'cod' },
-            { id: 4, name: 'M-Pesa', code: 'mpesa' }
-        ];
-
-        // Currencies data
-        const currencies = [
-            { code: 'USD', name: 'US Dollar', symbol: '$', rate: 1.0 },
-            { code: 'EUR', name: 'Euro', symbol: '€', rate: 0.92 },
-            { code: 'GBP', name: 'British Pound', symbol: '£', rate: 0.79 },
-            { code: 'TZS', name: 'Tanzanian Shilling', symbol: 'TSh', rate: 2520.0 }
-        ];
-
-        // Initialize dialogue system
-        function initializeDialogueSystem() {
-            updateDialogueState();
-            renderPaymentMethods();
-            renderCurrencies();
-            
-            // Add event listener for reset button
-            document.getElementById('resetDialogueButton').addEventListener('click', resetDialogue);
-            
-            // Initialize available currencies click handlers
-            document.querySelectorAll('.currency-option').forEach(option => {
-                option.addEventListener('click', () => {
-                    const currencyCode = option.dataset.code;
-                    const currency = currencies.find(c => c.code === currencyCode);
-                    
-                    if (currency) {
-                        setCurrency(currencyCode);
-                        dialogueState.currency_id = currency.id;
-                        addDialogueMessage('system', `Currency changed to ${currency.name}`);
-                    }
-                });
-            });
-
-            // Add event listeners for settings
-            document.getElementById('settingsDeliveryType').addEventListener('change', function(e) {
-                dialogueState.delivery_type = e.target.value;
-                document.getElementById('currentDeliveryType').textContent = e.target.value;
-                addDialogueMessage('system', `Delivery type changed to ${e.target.value}`);
-            });
-        }
-
-        // Handle voice processing result - dialogue mode
-        function handleDialogueVoiceResult(result) {
-            // Update dialogue state
-            if (result.dialogue_state) {
-                dialogueState = result.dialogue_state;
-                updateDialogueState();
-            }
-            
-            // Process actions
-            if (result.actions && result.actions.length > 0) {
-                result.actions.forEach(action => {
-                    processDialogueAction(action);
-                });
-            }
-            
-            // Add message to dialogue history
-            addDialogueMessage('user', result.transcription.text);
-            if (result.message) {
-                addDialogueMessage('system', result.message);
-            }
-        }
-
-        // Process dialogue action
-        function processDialogueAction(action) {
-            switch (action.type) {
-                case 'add_to_cart':
-                    updateCart(action.products);
-                    break;
-                
-                case 'remove_from_cart':
-                    updateCartAfterRemove(action.products);
-                    break;
-                
-                case 'select_payment_method':
-                    selectPaymentMethod(action.payment_method.id);
-                    break;
-                
-                case 'change_currency':
-                    setCurrency(action.currency.code);
-                    break;
-                
-                case 'update_cart_prices':
-                    updateCartDisplay();
-                    break;
-                
-                case 'suggest_payment_methods':
-                    highlightPaymentMethods();
-                    break;
-                
-                case 'checkout':
-                    processCheckout(action);
-                    break;
-            }
-        }
-
-        // Update dialogue state function
-        function updateDialogueState() {
-            // Update dialogue step
-            document.getElementById('dialogueStep').textContent = dialogueState.step || 'initial';
-            
-            // Update currency display
-            if (dialogueState.currency) {
-                document.getElementById('currencyName').textContent = dialogueState.currency.name;
-                document.getElementById('currencyCode').textContent = dialogueState.currency.code;
-            }
-            
-            // Update order settings
-            document.getElementById('currentShopId').textContent = dialogueState.shop_id || 'Not set';
-            document.getElementById('currentAddressId').textContent = dialogueState.address_id || 'Not set';
-            document.getElementById('currentDeliverymanId').textContent = dialogueState.deliveryman_id || 'Not set';
-            document.getElementById('currentDeliveryType').textContent = dialogueState.delivery_type || 'delivery';
-            
-            // Update delivery type dropdown to match current value
-            const deliveryTypeSelect = document.getElementById('settingsDeliveryType');
-            if (deliveryTypeSelect) {
-                deliveryTypeSelect.value = dialogueState.delivery_type || 'delivery';
-            }
-            
-            // Update cart display
-            updateCartDisplay();
-            
-            // Update selected payment method
-            if (dialogueState.selected_payment) {
-                selectPaymentMethod(dialogueState.selected_payment.id);
-            }
-        }
-
-        // Render payment methods
-        function renderPaymentMethods() {
-            const container = document.getElementById('paymentMethodsContainer');
-            container.innerHTML = '';
-            
-            paymentMethods.forEach(method => {
-                const methodEl = document.createElement('div');
-                methodEl.className = 'payment-method';
-                methodEl.dataset.id = method.id;
-                methodEl.dataset.code = method.code;
-                methodEl.innerHTML = `<span class="payment-method-name">${method.name}</span>`;
-                
-                methodEl.addEventListener('click', () => {
-                    selectPaymentMethod(method.id);
-                });
-                
-                container.appendChild(methodEl);
-            });
-        }
-
-        // Select payment method
-        function selectPaymentMethod(id) {
-            document.querySelectorAll('.payment-method').forEach(el => {
-                el.classList.remove('selected');
-                if (parseInt(el.dataset.id) === id) {
-                    el.classList.add('selected');
-                    
-                    // Update dialogue state
-                    const method = paymentMethods.find(m => m.id === id);
-                    dialogueState.selected_payment = method;
-                    
-                    // Show checkout button if cart has items
-                    if (dialogueState.cart.length > 0 && !document.querySelector('.checkout-button')) {
-                        const cartTotalContainer = document.getElementById('cartTotalContainer');
-                        const checkoutButton = document.createElement('button');
-                        checkoutButton.className = 'checkout-button primary';
-                        checkoutButton.textContent = 'Checkout';
-                        checkoutButton.addEventListener('click', () => {
-                            processCheckout({
-                                payment_method: dialogueState.selected_payment,
-                                cart: dialogueState.cart,
-                                total: calculateCartTotal()
-                            });
-                        });
-                        
-                        cartTotalContainer.appendChild(checkoutButton);
-                    }
-                }
-            });
-        }
-
-        // Render currencies
-        function renderCurrencies() {
-            document.querySelectorAll('.currency-option').forEach(option => {
-                const currency = currencies.find(c => c.code === option.dataset.code);
-                if (currency) {
-                    option.textContent = currency.code;
-                    option.title = currency.name;
-                    
-                    if (currency.code === dialogueState.currency.code) {
-                        option.classList.add('active');
-                    }
-                }
-            });
-        }
-
-        // Set currency
-        function setCurrency(code) {
-            const currency = currencies.find(c => c.code === code);
-            if (currency) {
-                dialogueState.currency = currency;
-                
-                // Update currency display
-                document.getElementById('currencyName').textContent = currency.name;
-                document.getElementById('currencyCode').textContent = currency.code;
-                
-                // Update active class
-                document.querySelectorAll('.currency-option').forEach(option => {
-                    option.classList.toggle('active', option.dataset.code === code);
-                });
-                
-                // Update cart prices
-                updateCartDisplay();
-            }
-        }
-
-        // Update cart with products
-        function updateCart(products) {
-            if (!products || products.length === 0) return;
-            
-            products.forEach(product => {
-                // Check if product already exists in cart
-                const existingProduct = dialogueState.cart.find(item => item.id === product.id);
-                
-                if (existingProduct) {
-                    existingProduct.quantity = (existingProduct.quantity || 1) + (product.quantity || 1);
-                } else {
-                    dialogueState.cart.push(product);
-                }
-            });
-            
-            updateCartDisplay();
-        }
-
-        // Update cart after removing products
-        function updateCartAfterRemove(productNames) {
-            if (!productNames || productNames.length === 0) return;
-            
-            productNames.forEach(name => {
-                const index = dialogueState.cart.findIndex(item => 
-                    item.name.toLowerCase() === name.toLowerCase());
-                
-                if (index !== -1) {
-                    dialogueState.cart.splice(index, 1);
-                }
-            });
-            
-            updateCartDisplay();
-        }
-
-        // Update cart display
-        function updateCartDisplay() {
-            const container = document.getElementById('cartItemsContainer');
-            const emptyMessage = document.getElementById('emptyCartMessage');
-            const totalElement = document.getElementById('cartTotal');
-            
-            if (dialogueState.cart.length === 0) {
-                container.innerHTML = '';
-                emptyMessage.style.display = 'block';
-                totalElement.textContent = formatPrice(0);
-                return;
-            }
-            
-            emptyMessage.style.display = 'none';
-            container.innerHTML = '';
-            
-            dialogueState.cart.forEach(item => {
-                const itemEl = document.createElement('div');
-                itemEl.className = 'cart-item';
-                
-                const price = formatPrice(item.price * item.quantity);
-                
-                itemEl.innerHTML = `
-                    <span class="cart-item-name">${item.name}</span>
-                    <span class="cart-item-quantity">×${item.quantity}</span>
-                    <span class="cart-item-price">${price}</span>
-                `;
-                
-                container.appendChild(itemEl);
-            });
-            
-            // Update total
-            totalElement.textContent = formatPrice(calculateCartTotal());
-        }
-
-        // Calculate cart total
-        function calculateCartTotal() {
-            return dialogueState.cart.reduce((total, item) => {
-                return total + (parseFloat(item.price) * (item.quantity || 1));
-            }, 0);
-        }
-
-        // Format price with currency
-        function formatPrice(price) {
-            return `${dialogueState.currency.symbol}${(price * dialogueState.currency.rate).toFixed(2)}`;
-        }
-
-        // Reset dialogue
-        async function resetDialogue() {
-            try {
-                // Use a simple client-side reset instead of API call since the endpoint doesn't exist
-                dialogueState = {
-                    step: 'initial',
-                    cart: [],
-                    products: [],
-                    selected_payment: null,
-                    currency: {
-                        code: 'USD',
-                        name: 'US Dollar',
-                        symbol: '$',
-                        rate: 1.0
-                    },
-                    shop_id: null,
-                    currency_id: 1,
-                    address_id: null,
-                    deliveryman_id: null,
-                    delivery_type: 'delivery',
-                    session_id: generateSessionId()
-                };
-                
-                // Clear dialogue history
-                document.getElementById('dialogueHistory').innerHTML = '';
-                
-                // Update UI
-                updateDialogueState();
-                addDialogueMessage('system', 'Dialogue reset. What would you like to order?');
-            } catch (error) {
-                console.error('Error resetting dialogue:', error);
-            }
-        }
-
-        // Add message to dialogue history
-        function addDialogueMessage(type, message) {
-            const historyContainer = document.getElementById('dialogueHistory');
-            const messageEl = document.createElement('div');
-            messageEl.className = `dialogue-message ${type}`;
-            messageEl.textContent = message;
-            
-            historyContainer.appendChild(messageEl);
-            historyContainer.scrollTop = historyContainer.scrollHeight;
-        }
-
-        // Process checkout
-        function processCheckout(action) {
-            addDialogueMessage('system', `Processing checkout with ${action.payment_method.name}. Your total is ${formatPrice(calculateCartTotal())}.`);
-            
-            // In a real app, you would redirect to checkout page or process payment
-            // For demo, just show a confirmation message
-            alert(`Order placed successfully!\nTotal: ${formatPrice(calculateCartTotal())}\nPayment Method: ${action.payment_method.name}`);
-            
-            // Reset cart after checkout
-            dialogueState.cart = [];
-            dialogueState.step = 'order_complete';
-            updateDialogueState();
-        }
-
-        // Highlight payment methods to draw attention
-        function highlightPaymentMethods() {
-            const container = document.getElementById('paymentMethodsContainer');
-            container.style.animation = 'pulse 1s ease-in-out';
-            
-            setTimeout(() => {
-                container.style.animation = '';
-            }, 1000);
-        }
-
-        // Initialize dialogue system on page load
-        document.addEventListener('DOMContentLoaded', initializeDialogueSystem);
-
-        // Function to render product recommendations
-        function renderProducts(products) {
-            productsContainer.innerHTML = '';
-            
-            if (!products || products.length === 0) {
-                productsContainer.innerHTML = '<p>No products found matching your request.</p>';
-                return;
-            }
-            
-            products.forEach(product => {
-                const productCard = document.createElement('div');
-                productCard.className = 'product-card';
-                
-                const imageUrl = product.image_url || 'https://via.placeholder.com/150?text=Food';
-                const price = product.price ? formatPrice(product.price) : '$0.00';
-                const description = product.description || 'No description available';
-                
-                productCard.innerHTML = `
-                    <img src="${imageUrl}" alt="${product.name}" class="product-image">
-                    <div class="product-info">
-                        <div class="product-title">${product.name}</div>
-                        <div class="product-price">${price}</div>
-                        <div class="product-description">${description}</div>
-                        <button class="add-to-cart" data-id="${product.id}" data-name="${product.name}" data-price="${product.price}">Add to Cart</button>
-                    </div>
-                `;
-                
-                // Add click handler for the add to cart button
-                const addButton = productCard.querySelector('.add-to-cart');
-                addButton.addEventListener('click', () => {
-                    updateCart([{
-                        id: product.id,
-                        name: product.name,
-                        price: product.price,
-                        quantity: 1
-                    }]);
-                    
-                    addDialogueMessage('system', `Added ${product.name} to your cart.`);
-                });
-                
-                productsContainer.appendChild(productCard);
-            });
-        }
-
-        // Add event listeners for setting IDs
-        document.getElementById('setShopId').addEventListener('click', function() {
-            const shopId = document.getElementById('settingsShopId').value;
-            if (shopId) {
-                dialogueState.shop_id = parseInt(shopId);
-                document.getElementById('currentShopId').textContent = shopId;
-                addDialogueMessage('system', `Shop ID set to ${shopId}`);
-            }
+    }
+    
+    function displayDietaryPreferences(preferences) {
+        if (!preferences || preferences.length === 0) return;
+        
+        dietaryBadges.innerHTML = '';
+        dietaryBadges.classList.remove('hidden');
+        
+        // Display preferences as badges
+        preferences.forEach(pref => {
+            const badge = document.createElement('span');
+            badge.className = 'dietary-badge';
+            badge.textContent = formatPreference(pref);
+            dietaryBadges.appendChild(badge);
         });
+    }
+    
+    function formatPreference(pref) {
+        // Convert preference_key to Preference Key format
+        return pref.split('_')
+            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+            .join(' ');
+    }
+</script>
 
-        document.getElementById('setAddressId').addEventListener('click', function() {
-            const addressId = document.getElementById('settingsAddressId').value;
-            if (addressId) {
-                dialogueState.address_id = parseInt(addressId);
-                document.getElementById('currentAddressId').textContent = addressId;
-                addDialogueMessage('system', `Address ID set to ${addressId}`);
-            }
-        });
-
-        document.getElementById('setDeliverymanId').addEventListener('click', function() {
-            const deliverymanId = document.getElementById('settingsDeliverymanId').value;
-            if (deliverymanId) {
-                dialogueState.deliveryman_id = parseInt(deliverymanId);
-                document.getElementById('currentDeliverymanId').textContent = deliverymanId;
-                addDialogueMessage('system', `Deliveryman ID set to ${deliverymanId}`);
-            }
-        });
-
-        // Add a test API connection button handler
-        document.getElementById('testApiConnection').addEventListener('click', async () => {
-            const debugInfo = document.getElementById('apiDebugInfo');
-            const connectionResult = document.getElementById('apiConnectionResult');
-            
-            connectionResult.innerHTML = 'Testing API connection...';
-            
-            try {
-                // Test a simple API endpoint
-                const response = await fetch('/api/v1/dashboard/user/profile/show', {
-                    headers: {
-                        'Accept': 'application/json',
-                        ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-                    }
-                });
-                
-                const statusColor = response.ok ? 'green' : 'red';
-                connectionResult.innerHTML = `<div style="color: ${statusColor}">
-                    Status: ${response.status} ${response.statusText}<br>
-                    Endpoint: /api/v1/dashboard/user/profile/show
-                </div>`;
-                
-                // Try the voice-order endpoint with a HEAD request
-                const voiceOrderCheck = await fetch('/api/v1/voice-order', {
-                    method: 'HEAD',
-                    headers: {
-                        'Accept': 'application/json',
-                        ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-                    }
-                }).catch(e => ({ ok: false, status: 'Error', statusText: e.message }));
-                
-                connectionResult.innerHTML += `<div style="color: ${voiceOrderCheck.ok ? 'green' : 'red'}; margin-top: 10px;">
-                    Voice Order API: ${voiceOrderCheck.status} ${voiceOrderCheck.statusText}<br>
-                    Endpoint: /api/v1/voice-order
-                </div>`;
-                
-                debugInfo.textContent = JSON.stringify({
-                    'User Agent': navigator.userAgent,
-                    'API Endpoints': [
-                        { endpoint: '/api/v1/dashboard/user/profile/show', status: response.status },
-                        { endpoint: '/api/v1/voice-order', status: voiceOrderCheck.status }
-                    ]
-                }, null, 2);
-            } catch (error) {
-                connectionResult.innerHTML = `<div style="color: red">Error: ${error.message}</div>`;
-                debugInfo.textContent = JSON.stringify({ error: error.message }, null, 2);
-            }
-        });
-
-        // Function to check speech recognition support
-        function checkSpeechRecognitionSupport() {
-            const debugInfo = document.getElementById('apiDebugInfo') || { textContent: '' };
-            const speechInfo = document.createElement('div');
-            speechInfo.id = 'speechRecognitionInfo';
-            speechInfo.style.margin = '10px 0';
-            speechInfo.style.padding = '10px';
-            speechInfo.style.backgroundColor = '#f0f9ff';
-            speechInfo.style.borderLeft = '4px solid #2563eb';
-            
-            // Check general speech recognition support
-            if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-                speechInfo.innerHTML = `<strong style="color:red">❌ Speech Recognition API is not supported by this browser.</strong><br>
-                Try using Chrome, Edge, or Safari.`;
-                startButton.disabled = true;
-            } else {
-                // Create a temporary recognition object to test language support
-                const testRecognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
-                
-                // Get the selected language
-                const selectedLanguage = document.getElementById('language').value;
-                
-                // Add event listeners to check language support
-                testRecognition.onerror = function(event) {
-                    if (event.error === 'language-not-supported') {
-                        speechInfo.innerHTML = `<strong style="color:orange">⚠️ Warning: Selected language "${selectedLanguage}" is not supported by this browser's speech recognition.</strong><br>
-                        Voice recording will fall back to English (en-US).`;
-                    }
-                };
-                
-                testRecognition.onend = function() {
-                    // If no error event fired, language is probably supported
-                    if (!speechInfo.innerHTML) {
-                        speechInfo.innerHTML = `<strong style="color:green">✓ Speech Recognition is supported by this browser.</strong><br>
-                        Selected language: ${selectedLanguage}`;
-                    }
-                };
-                
-                // Try to start recognition with the selected language
-                try {
-                    testRecognition.lang = selectedLanguage;
-                    testRecognition.start();
-                    setTimeout(() => {
-                        try {
-                            testRecognition.stop();
-                        } catch (e) {
-                            // Ignore errors during stop
-                        }
-                    }, 100);
-                } catch (error) {
-                    speechInfo.innerHTML = `<strong style="color:red">❌ Error initializing Speech Recognition:</strong><br>${error.message}`;
-                }
-            }
-            
-            // Get container element or create one
-            const container = document.querySelector('.controls');
-            container.insertBefore(speechInfo, container.firstChild);
-            
-            // Also log to debug info
-            debugInfo.textContent += `\n\nSpeech Recognition: ${('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) ? 'Supported' : 'Not supported'}\n`;
-            debugInfo.textContent += `Browser: ${navigator.userAgent}`;
-        }
-
-        // Update the language select to check speech recognition support when changed
-        document.getElementById('language').addEventListener('change', function() {
-            // Remove existing speech recognition info
-            const existingInfo = document.getElementById('speechRecognitionInfo');
-            if (existingInfo) {
-                existingInfo.remove();
-            }
-            
-            // Re-check speech recognition support with the new language
-            checkSpeechRecognitionSupport();
-        });
-
-        // Run the check when the page loads
-        document.addEventListener('DOMContentLoaded', function() {
-            initializeDialogueSystem();
-            checkSpeechRecognitionSupport();
-        });
-    </script>
 </body>
 </html>
