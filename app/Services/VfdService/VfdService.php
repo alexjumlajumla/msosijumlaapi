@@ -29,6 +29,16 @@ class VfdService extends CoreService
     }
 
     /**
+     * Implement the abstract method from CoreService
+     * 
+     * @return string
+     */
+    protected function getModelClass(): string
+    {
+        return VfdReceipt::class;
+    }
+
+    /**
      * Generate a fiscal receipt for delivery or subscription
      *
      * @param string $type
