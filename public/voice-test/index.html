@@ -279,25 +279,75 @@
         const formData = new FormData();
         formData.append('audio', audioBlob, 'recording.webm');
         formData.append('session_id', sessionId);
-        formData.append('language', 'en-US');
+        formData.append('language', 'en-US'); // Hard-code to en-US for better compatibility
 
         try {
             statusEl.textContent = 'Sending audio for processing...';
             
-            // Try the primary endpoint first, fall back to test endpoint if needed
-            let response;
+            // Try multiple endpoints in sequence to improve reliability
+            let response = null;
+            let error = null;
+            
+            // Try each endpoint in order until one works
             try {
                 response = await fetch('/api/voice/process', {
                     method: 'POST',
                     body: formData,
                     credentials: 'include'
                 });
-            } catch (error) {
-                console.warn('Primary endpoint failed, trying fallback:', error);
-                response = await fetch('/api/voice-test-api', {
-                    method: 'POST',
-                    body: formData
-                });
+                console.log('Primary endpoint succeeded');
+            } catch (err) {
+                console.warn('Primary endpoint failed:', err);
+                error = err;
+            }
+            
+            // If primary failed, try the voice-dialogue endpoint
+            if (!response) {
+                try {
+                    response = await fetch('/api/voice-dialogue/process', {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'include'
+                    });
+                    console.log('Voice-dialogue endpoint succeeded');
+                } catch (err) {
+                    console.warn('Voice-dialogue endpoint failed:', err);
+                    error = err;
+                }
+            }
+            
+            // If both failed, try the v1 endpoint in the REST API
+            if (!response) {
+                try {
+                    response = await fetch('/api/v1/voice-order', {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'include'
+                    });
+                    console.log('V1 endpoint succeeded');
+                } catch (err) {
+                    console.warn('V1 endpoint failed:', err);
+                    error = err;
+                }
+            }
+            
+            // If all API endpoints failed, try the test endpoint
+            if (!response) {
+                try {
+                    response = await fetch('/api/voice-test-api', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    console.log('Test endpoint succeeded');
+                } catch (err) {
+                    console.warn('Test endpoint failed:', err);
+                    error = err;
+                }
+            }
+            
+            // If all endpoints failed, show error
+            if (!response) {
+                throw new Error('All API endpoints failed: ' + (error ? error.message : 'Unknown error'));
             }
             
             const data = await response.json();

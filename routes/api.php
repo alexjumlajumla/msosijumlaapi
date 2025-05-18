@@ -2001,3 +2001,7 @@ Route::get('voice/test', [App\Http\Controllers\VoiceOrderController::class, 'tes
 
 // Include voice test API route
 require __DIR__ . '/voice_test.php';
+
+// Voice Order API without prefix
+Route::post('/voice/process', [VoiceOrderController::class, 'processVoiceOrder'])->middleware(['throttle:20,1']);
+Route::post('/voice-dialogue/process', [VoiceOrderController::class, 'processVoiceOrder'])->middleware(['throttle:20,1']);
