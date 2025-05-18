@@ -1864,10 +1864,10 @@ Route::get('/debug-openai-config', function() {
 Route::group(['prefix' => 'driver', 'middleware' => ['sanctum.check', 'auth:sanctum', 'role:deliveryman']], function() {
     // Add trips endpoints
     Route::prefix('trips')->group(function() {
-        Route::get('current', [Auth\Driver\LocationController::class, 'currentTrip']);
-        Route::post('start', [Auth\Driver\LocationController::class, 'startTrip']);
-        Route::post('location/update', [Auth\Driver\LocationController::class, 'updateLocation']);
-        Route::post('stop/complete', [Auth\Driver\LocationController::class, 'completeCurrentStop']);
+        Route::get('current', [App\Http\Controllers\API\v1\Auth\Driver\LocationController::class, 'currentTrip']);
+        Route::post('start', [App\Http\Controllers\API\v1\Auth\Driver\LocationController::class, 'startTrip']);
+        Route::post('location/update', [App\Http\Controllers\API\v1\Auth\Driver\LocationController::class, 'updateLocation']);
+        Route::post('stop/complete', [App\Http\Controllers\API\v1\Auth\Driver\LocationController::class, 'completeCurrentStop']);
     });
 });
 
