@@ -43,12 +43,65 @@ This guide outlines the implementation of a modern, OpenAI-style voice ordering 
 | Endpoint | Method | Description | Auth |
 |----------|--------|-------------|------|
 | `/api/v1/voice-order` | POST | Process voice recordings | Optional |
-| `/api/v1/voice-order/{id}/retry` | POST | Retry processing a voice order | Required |
+| `/api/v1/voice-order/transcribe` | POST | Transcribe audio only | Public |
+| `/api/v1/voice-order/realtime-transcription` | POST | Real-time transcription | Optional |
+| `/api/v1/voice-order/repeat` | POST | Repeat previous order | Required |
 | `/api/v1/voice-order/feedback` | POST | Submit feedback on recommendations | Required |
+| `/api/v1/voice-order/{id}/retry` | POST | Retry processing a voice order | Required |
+| `/api/v1/voice-order/history` | GET | Get user's voice order history | Required |
+| `/api/v1/voice-order/log/{id}` | GET | Get specific voice order log | Required |
 | `/api/v1/voice-order/{id}/mark-fulfilled` | POST | Mark order as fulfilled | Admin |
 | `/api/v1/voice-order/{id}/assign-agent` | POST | Assign agent to order | Admin |
+| `/api/v1/voice-order/{id}/link-to-order` | POST | Link voice order to regular order | Admin |
 | `/api/v1/voice-order/stats` | GET | Get voice order statistics | Admin |
 | `/api/v1/voice-order/user/{id}` | GET | Get user's voice orders | Admin/Self |
+
+### Voice Order Request Parameters
+
+#### Process Voice Order
+
+```json
+{
+  "audio": "File (audio/webm, audio/mp3, etc.)",
+  "language": "en-US",
+  "session_id": "optional-session-identifier",
+  "shop_id": "optional-shop-id",
+  "currency_id": "optional-currency-id",
+  "address_id": "optional-user-address-id",
+  "delivery_type": "delivery/pickup/dine-in"
+}
+```
+
+#### Response Format
+
+```json
+{
+  "success": true,
+  "transcription": "I want to order a large pizza with pepperoni",
+  "intent_data": {
+    "intent": "food_order",
+    "filters": ["pizza", "large", "pepperoni"],
+    "exclusions": []
+  },
+  "recommendations": [
+    {
+      "id": 123,
+      "name": "Large Pepperoni Pizza",
+      "price": 12.99,
+      "image_url": "https://example.com/image.jpg",
+      "description": "Classic pepperoni pizza on our signature crust"
+    }
+  ],
+  "recommendation_text": "I found a Large Pepperoni Pizza for you. Would you like to add it to your cart?",
+  "session_id": "session-identifier",
+  "voice_order_id": 456,
+  "shop_id": 789,
+  "currency_id": 1,
+  "delivery_fee": 2.50,
+  "total_price": 15.49,
+  "confidence_score": 0.92
+}
+```
 
 ## Modern Chat Interface Implementation
 
@@ -605,6 +658,18 @@ export function AudioRecorder({
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.webm');
       formData.append('session_id', sessionId);
+      
+      // Get user's active address if available
+      const userData = session?.user?.userData;
+      if (userData?.active_address?.id) {
+        formData.append('address_id', userData.active_address.id);
+      }
+      
+      // Get shop ID if we're in shop context
+      const shopId = localStorage.getItem('current_shop_id');
+      if (shopId) {
+        formData.append('shop_id', shopId);
+      }
       
       // Send to API
       const response = await axios.post('/api/v1/voice-order', formData, {

@@ -61,6 +61,18 @@ Route::group(['prefix' => 'v1', 'middleware' => ['block.ip']], function () {
         // Public testing endpoints (no auth required, but rate limited)
         Route::post('/test-transcribe', [VoiceOrderController::class, 'testTranscribe'])->middleware('throttle:30,1');
         Route::post('/transcribe', [VoiceOrderController::class, 'transcribe'])->middleware('throttle:30,1');
+        
+        // Admin endpoints (require admin access)
+        Route::middleware(['sanctum.check', 'role:admin|manager'])->group(function () {
+            Route::post('/{id}/mark-fulfilled', [VoiceOrderController::class, 'markAsFulfilled']);
+            Route::post('/{id}/assign-agent', [VoiceOrderController::class, 'assignAgent']);
+            Route::post('/{id}/link-to-order', [VoiceOrderController::class, 'linkToOrder']);
+            Route::get('/stats', [VoiceOrderController::class, 'getStats']);
+            Route::get('/user/{id}', [VoiceOrderController::class, 'getUserVoiceOrders']);
+        });
+        
+        // Additional processing endpoints
+        Route::post('/{id}/retry', [VoiceOrderController::class, 'retryProcessing'])->middleware('sanctum.check');
     });
     
     // API key testing endpoint

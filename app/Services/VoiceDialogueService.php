@@ -73,7 +73,11 @@ class VoiceDialogueService
             'currency' => $this->getActiveCurrency(),
             'last_transcription' => '',
             'context' => [],
-            'session_id' => Str::uuid()->toString()
+            'session_id' => Str::uuid()->toString(),
+            'shop_id' => null,
+            'address_id' => null,
+            'currency_id' => null,
+            'delivery_type' => 'delivery'
         ];
     }
     
@@ -82,12 +86,30 @@ class VoiceDialogueService
      * 
      * @param string $audioFilePath
      * @param string $languageCode
+     * @param array $params
      * @return array Response with actions and dialogue state
      */
-    public function processVoiceCommand(string $audioFilePath, string $languageCode = 'en-US'): array
+    public function processVoiceCommand(string $audioFilePath, string $languageCode = 'en-US', array $params = []): array
     {
         // Enhance speech recognition with domain-specific phrases
         $this->voiceService->setCustomPhrases($this->getCustomPhrases());
+        
+        // Set shop_id and address_id if provided
+        if (!empty($params['shop_id'])) {
+            $this->dialogueState['shop_id'] = $params['shop_id'];
+        }
+        
+        if (!empty($params['address_id'])) {
+            $this->dialogueState['address_id'] = $params['address_id'];
+        }
+        
+        if (!empty($params['currency_id'])) {
+            $this->dialogueState['currency_id'] = $params['currency_id'];
+        }
+        
+        if (!empty($params['delivery_type'])) {
+            $this->dialogueState['delivery_type'] = $params['delivery_type'];
+        }
         
         // Transcribe the audio
         $transcription = $this->voiceService->transcribeAudio($audioFilePath, $languageCode);
@@ -115,6 +137,12 @@ class VoiceDialogueService
             'confidence' => $transcription['confidence'],
             'language' => $transcription['language']
         ];
+        
+        // Add shop_id, address_id, and currency_id to the response
+        $response['shop_id'] = $this->dialogueState['shop_id'];
+        $response['address_id'] = $this->dialogueState['address_id'];
+        $response['currency_id'] = $this->dialogueState['currency_id'];
+        $response['delivery_type'] = $this->dialogueState['delivery_type'];
         
         return $response;
     }
@@ -251,8 +279,14 @@ class VoiceDialogueService
                         'id' => $product->id,
                         'name' => $product->name,
                         'price' => $this->formatPrice($product->price, $this->dialogueState['currency']),
-                        'quantity' => $quantity
+                        'quantity' => $quantity,
+                        'shop_id' => $product->shop_id ?? $this->dialogueState['shop_id']
                     ];
+                    
+                    // If the product has a shop_id and we don't have one yet, set it
+                    if (empty($this->dialogueState['shop_id']) && !empty($product->shop_id)) {
+                        $this->dialogueState['shop_id'] = $product->shop_id;
+                    }
                 } else {
                     $failedProducts[] = $entity['value'];
                 }
@@ -262,7 +296,10 @@ class VoiceDialogueService
         if (!empty($products)) {
             $response['actions'][] = [
                 'type' => 'add_to_cart',
-                'products' => $products
+                'products' => $products,
+                'shop_id' => $this->dialogueState['shop_id'],
+                'address_id' => $this->dialogueState['address_id'],
+                'currency_id' => $this->dialogueState['currency_id']
             ];
             
             $response['message'] = count($products) === 1 
@@ -371,7 +408,11 @@ class VoiceDialogueService
                 'type' => 'checkout',
                 'payment_method' => $this->dialogueState['selected_payment'],
                 'cart' => $cart,
-                'total' => $this->getCartTotal()
+                'total' => $this->getCartTotal(),
+                'shop_id' => $this->dialogueState['shop_id'],
+                'address_id' => $this->dialogueState['address_id'],
+                'currency_id' => $this->dialogueState['currency_id'],
+                'delivery_type' => $this->dialogueState['delivery_type']
             ];
             
             $response['message'] = "Processing your order with {$this->dialogueState['selected_payment']['name']}. Your total is " . 
@@ -480,10 +521,12 @@ class VoiceDialogueService
         
         if ($selectedCurrency) {
             $this->dialogueState['currency'] = $selectedCurrency;
+            $this->dialogueState['currency_id'] = $selectedCurrency['id'] ?? null;
             
             $response['actions'][] = [
                 'type' => 'change_currency',
-                'currency' => $selectedCurrency
+                'currency' => $selectedCurrency,
+                'currency_id' => $selectedCurrency['id'] ?? null
             ];
             
             $response['message'] = "Currency changed to {$selectedCurrency['name']} ({$selectedCurrency['code']}).";
@@ -875,10 +918,10 @@ class VoiceDialogueService
         // In a real application, this would get from database
         // This is a placeholder with sample data
         return [
-            ['code' => 'USD', 'name' => 'US Dollar', 'symbol' => '$', 'rate' => 1.0],
-            ['code' => 'EUR', 'name' => 'Euro', 'symbol' => '€', 'rate' => 0.92],
-            ['code' => 'GBP', 'name' => 'British Pound', 'symbol' => '£', 'rate' => 0.79],
-            ['code' => 'TZS', 'name' => 'Tanzanian Shilling', 'symbol' => 'TSh', 'rate' => 2520.0]
+            ['id' => 1, 'code' => 'USD', 'name' => 'US Dollar', 'symbol' => '$', 'rate' => 1.0],
+            ['id' => 2, 'code' => 'EUR', 'name' => 'Euro', 'symbol' => '€', 'rate' => 0.92],
+            ['id' => 3, 'code' => 'GBP', 'name' => 'British Pound', 'symbol' => '£', 'rate' => 0.79],
+            ['id' => 4, 'code' => 'TZS', 'name' => 'Tanzanian Shilling', 'symbol' => 'TSh', 'rate' => 2520.0]
         ];
     }
     
@@ -1040,5 +1083,93 @@ class VoiceDialogueService
     {
         $this->dialogueState = $state;
         return $this;
+    }
+    
+    /**
+     * Set shop_id
+     * 
+     * @param int|null $shopId
+     * @return self For method chaining
+     */
+    public function setShopId(?int $shopId): self
+    {
+        $this->dialogueState['shop_id'] = $shopId;
+        return $this;
+    }
+    
+    /**
+     * Get shop_id
+     * 
+     * @return int|null
+     */
+    public function getShopId(): ?int
+    {
+        return $this->dialogueState['shop_id'];
+    }
+    
+    /**
+     * Set address_id
+     * 
+     * @param int|null $addressId
+     * @return self For method chaining
+     */
+    public function setAddressId(?int $addressId): self
+    {
+        $this->dialogueState['address_id'] = $addressId;
+        return $this;
+    }
+    
+    /**
+     * Get address_id
+     * 
+     * @return int|null
+     */
+    public function getAddressId(): ?int
+    {
+        return $this->dialogueState['address_id'];
+    }
+    
+    /**
+     * Set currency_id
+     * 
+     * @param int|null $currencyId
+     * @return self For method chaining
+     */
+    public function setCurrencyId(?int $currencyId): self
+    {
+        $this->dialogueState['currency_id'] = $currencyId;
+        return $this;
+    }
+    
+    /**
+     * Get currency_id
+     * 
+     * @return int|null
+     */
+    public function getCurrencyId(): ?int
+    {
+        return $this->dialogueState['currency_id'];
+    }
+    
+    /**
+     * Set delivery_type
+     * 
+     * @param string $deliveryType
+     * @return self For method chaining
+     */
+    public function setDeliveryType(string $deliveryType): self
+    {
+        $this->dialogueState['delivery_type'] = $deliveryType;
+        return $this;
+    }
+    
+    /**
+     * Get delivery_type
+     * 
+     * @return string
+     */
+    public function getDeliveryType(): string
+    {
+        return $this->dialogueState['delivery_type'];
     }
 } 
