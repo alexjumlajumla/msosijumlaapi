@@ -885,6 +885,7 @@ class VoiceOrderController extends Controller
 
             $audioFile = $request->file('audio');
             $language = $request->input('language', 'en-US');
+            $sessionId = $request->input('session_id', md5(uniqid()));
             
             // Log the audio details for debugging
             \Log::info('Audio file details', [
@@ -894,8 +895,38 @@ class VoiceOrderController extends Controller
                 'language' => $language
             ]);
             
+            // Save audio to S3 if authenticated
+            $audioUrl = null;
+            if (Auth::check()) {
+                $audioUrl = $this->saveAudioFileToS3($audioFile, $sessionId);
+            }
+            
             // Just transcribe the audio without further processing
             $result = $this->transcribeAudio($audioFile, $language);
+            
+            // Create log entry if authenticated
+            if (Auth::check()) {
+                $logData = [
+                    'user_id' => Auth::id(),
+                    'request_type' => 'transcription_only',
+                    'session_id' => $sessionId,
+                    'input' => $result['transcription'] ?? '',
+                    'request_content' => $result['transcription'] ?? '',
+                    'output' => $result['transcription'] ?? '',
+                    'response_content' => $result['transcription'] ?? '',
+                    'successful' => isset($result['success']) ? $result['success'] : false,
+                    'processing_time_ms' => 0,
+                    'metadata' => [
+                        'language' => $language,
+                        'confidence' => $result['confidence'] ?? 0,
+                    ],
+                    'audio_url' => $audioUrl,
+                    'audio_format' => $audioFile->getClientOriginalExtension(),
+                    'audio_stored' => !empty($audioUrl)
+                ];
+                
+                $logEntry = AIAssistantLog::create($logData);
+            }
             
             // Return the transcription result
             return response()->json([
@@ -903,17 +934,22 @@ class VoiceOrderController extends Controller
                 'text' => $result['transcription'] ?? '',
                 'language' => $language,
                 'confidence' => $result['confidence'] ?? 0,
-                'provider' => 'google_speech'
+                'provider' => 'google_speech',
+                'audio_stored' => !empty($audioUrl),
+                'log_id' => $logEntry->id ?? null
             ]);
+            
         } catch (\Exception $e) {
-            \Log::error('Error in transcribe endpoint: ' . $e->getMessage(), [
+            Log::error('Transcription error in controller', [
+                'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
             
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to transcribe audio: ' . $e->getMessage(),
-                'error_code' => $e->getCode()
+                'error' => $e->getMessage(),
+                'text' => '',
+                'language' => $language ?? 'en-US'
             ], 500);
         }
     }

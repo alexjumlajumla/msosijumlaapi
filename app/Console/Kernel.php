@@ -31,6 +31,11 @@ class Kernel extends ConsoleKernel
 			->at('03:00')  // Run at 3 AM
 			->withoutOverlapping()
 			->appendOutputTo(storage_path('logs/firebase-cleanup.log'));
+		$schedule->command('voice:cleanup-recordings')
+			->daily()
+			->at('02:00')  // Run at 2 AM
+			->withoutOverlapping()
+			->appendOutputTo(storage_path('logs/voice-cleanup.log'));
 	}
 
 	/**

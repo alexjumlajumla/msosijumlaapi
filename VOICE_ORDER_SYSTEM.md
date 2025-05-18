@@ -198,4 +198,37 @@ Each error is logged with detailed context to facilitate debugging and improveme
 - Enhanced context awareness for multi-turn conversations
 - Voice-based checkout process
 - Integration with delivery tracking
-- Accent and dialect adaptation for improved recognition 
+- Accent and dialect adaptation for improved recognition
+
+## Audio Storage
+
+The Voice Order System stores audio recordings in Amazon S3 for the following purposes:
+
+1. **Quality Assurance** - Stored recordings can be used to improve speech recognition quality
+2. **Debugging** - In case of issues, original audio can be analyzed to diagnose problems
+3. **Training Data** - With proper anonymization, recordings may be used to train custom speech models
+
+### Storage Architecture
+
+1. When a user submits a voice order request, the audio file is:
+   - Processed for transcription using Google Cloud Speech-to-Text
+   - Stored in Amazon S3 with a unique identifier
+   - The S3 URL is recorded in the database along with the transcription results
+
+2. Audio files are organized in S3 using the following path structure:
+   ```
+   voice-orders/{user_id}/{date}/{session_id}-{timestamp}.{extension}
+   ```
+
+3. For privacy and security:
+   - Audio files are only stored when the user is authenticated
+   - Files can be deleted upon user request or after a set retention period
+   - Access to stored files is restricted by IAM policies
+
+### Data Retention and Privacy
+
+Voice recordings are subject to the following data retention policy:
+
+1. Recordings are automatically deleted after 30 days unless needed for quality improvement
+2. Users can request deletion of their recordings at any time
+3. All data is processed in compliance with applicable privacy regulations 
