@@ -540,18 +540,35 @@
                     credentials: 'include'
                 });
                 
-                responseData = await response.json();
-                console.log('Primary endpoint succeeded', responseData);
-                
-                // Check for transcription errors
-                if (!responseData.success && responseData.message && responseData.message.includes("No voice text could be extracted")) {
-                    throw new Error(responseData.message || "Could not transcribe audio");
+                // Check if response is ok before continuing
+                if (!response.ok) {
+                    throw new Error('Server returned ' + response.status + ' ' + response.statusText);
                 }
                 
+                // Clone the response before reading it
+                const primaryResponseClone = response.clone();
+                
+                try {
+                    responseData = await response.json();
+                    console.log('Primary endpoint succeeded', responseData);
+                    
+                    // Check for transcription errors
+                    if (!responseData.success && responseData.message && responseData.message.includes("No voice text could be extracted")) {
+                        throw new Error(responseData.message || "Could not transcribe audio");
+                    }
+                } catch (jsonErr) {
+                    console.warn('Failed to parse JSON from primary response, attempting to read clone:', jsonErr);
+                    responseData = await primaryResponseClone.json();
+                    
+                    if (!responseData.success) {
+                        throw new Error(responseData.message || "Error processing audio");
+                    }
+                }
             } catch (err) {
                 console.warn('Primary endpoint failed:', err);
                 error = err;
                 response = null;
+                responseData = null;
             }
             
             // If primary failed, try the voice-dialogue endpoint
@@ -563,9 +580,15 @@
                         credentials: 'include'
                     });
                     console.log('Voice-dialogue endpoint succeeded');
+                    
+                    // Check if response is ok before continuing
+                    if (!response.ok) {
+                        throw new Error('Server returned ' + response.status + ' ' + response.statusText);
+                    }
                 } catch (err) {
                     console.warn('Voice-dialogue endpoint failed:', err);
                     error = err;
+                    response = null;
                 }
             }
             
@@ -578,9 +601,15 @@
                         credentials: 'include'
                     });
                     console.log('V1 endpoint succeeded');
+                    
+                    // Check if response is ok before continuing
+                    if (!response.ok) {
+                        throw new Error('Server returned ' + response.status + ' ' + response.statusText);
+                    }
                 } catch (err) {
                     console.warn('V1 endpoint failed:', err);
                     error = err;
+                    response = null;
                 }
             }
             
@@ -592,9 +621,15 @@
                         body: formData
                     });
                     console.log('Test endpoint succeeded');
+                    
+                    // Check if response is ok before continuing
+                    if (!response.ok) {
+                        throw new Error('Server returned ' + response.status + ' ' + response.statusText);
+                    }
                 } catch (err) {
                     console.warn('Test endpoint failed:', err);
                     error = err;
+                    response = null;
                 }
             }
             
@@ -603,7 +638,16 @@
                 throw new Error('All API endpoints failed: ' + (error ? error.message : 'Unknown error'));
             }
             
-            const data = await response.json();
+            // Make a clone of the response before reading it
+            const responseClone = response.clone();
+            let data;
+            
+            try {
+                data = await response.json();
+            } catch (err) {
+                console.warn('Failed to parse JSON from response, trying clone:', err);
+                data = await responseClone.json();
+            }
 
             if (data.success) {
                 // Hide recording tips when we have results
@@ -799,7 +843,16 @@
                 throw new Error('Server error: ' + response.status);
             }
             
-            const data = await response.json();
+            // Clone response before reading it
+            const responseClone = response.clone();
+            let data;
+            
+            try {
+                data = await response.json();
+            } catch (err) {
+                console.warn('Failed to parse category search JSON, trying clone:', err);
+                data = await responseClone.json();
+            }
             
             if (data.success) {
                 // Display recommendations without confidence warnings since this is a direct category selection
@@ -844,7 +897,16 @@
                 throw new Error('Server error: ' + response.status);
             }
             
-            const data = await response.json();
+            // Clone response before reading it
+            const responseClone = response.clone();
+            let data;
+            
+            try {
+                data = await response.json();
+            } catch (err) {
+                console.warn('Failed to parse text search JSON, trying clone:', err);
+                data = await responseClone.json();
+            }
             
             if (data.success) {
                 // Update UI with text search results
