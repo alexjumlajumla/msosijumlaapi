@@ -527,126 +527,77 @@
         try {
             statusEl.textContent = 'Sending audio for processing...';
             
-            // Try multiple endpoints in sequence to improve reliability
-            let response = null;
-            let error = null;
-            let responseData = null;
-            
-            // Try each endpoint in order until one works
-            try {
-                response = await fetch('/api/voice/process', {
-                    method: 'POST',
-                    body: formData,
-                    credentials: 'include'
-                });
-                
-                // Check if response is ok before continuing
-                if (!response.ok) {
-                    throw new Error('Server returned ' + response.status + ' ' + response.statusText);
-                }
-                
-                // Clone the response before reading it
-                const primaryResponseClone = response.clone();
-                
-                try {
-                    responseData = await response.json();
-                    console.log('Primary endpoint succeeded', responseData);
-                    
-                    // Check for transcription errors
-                    if (!responseData.success && responseData.message && responseData.message.includes("No voice text could be extracted")) {
-                        throw new Error(responseData.message || "Could not transcribe audio");
-                    }
-                } catch (jsonErr) {
-                    console.warn('Failed to parse JSON from primary response, attempting to read clone:', jsonErr);
-                    responseData = await primaryResponseClone.json();
-                    
-                    if (!responseData.success) {
-                        throw new Error(responseData.message || "Error processing audio");
-                    }
-                }
-            } catch (err) {
-                console.warn('Primary endpoint failed:', err);
-                error = err;
-                response = null;
-                responseData = null;
-            }
-            
-            // If primary failed, try the voice-dialogue endpoint
-            if (!response) {
-                try {
-                    response = await fetch('/api/voice-dialogue/process', {
+            // Completely redesigned endpoint fallback system to avoid response stream issues
+            let data = null;
+            const endpoints = [
+                {
+                    url: '/api/voice/process',
+                    options: {
                         method: 'POST',
                         body: formData,
                         credentials: 'include'
-                    });
-                    console.log('Voice-dialogue endpoint succeeded');
-                    
-                    // Check if response is ok before continuing
-                    if (!response.ok) {
-                        throw new Error('Server returned ' + response.status + ' ' + response.statusText);
-                    }
-                } catch (err) {
-                    console.warn('Voice-dialogue endpoint failed:', err);
-                    error = err;
-                    response = null;
-                }
-            }
-            
-            // If both failed, try the v1 endpoint in the REST API
-            if (!response) {
-                try {
-                    response = await fetch('/api/v1/voice-order', {
+                    },
+                    name: 'Primary endpoint'
+                },
+                {
+                    url: '/api/voice-dialogue/process',
+                    options: {
                         method: 'POST',
                         body: formData,
                         credentials: 'include'
-                    });
-                    console.log('V1 endpoint succeeded');
-                    
-                    // Check if response is ok before continuing
-                    if (!response.ok) {
-                        throw new Error('Server returned ' + response.status + ' ' + response.statusText);
-                    }
-                } catch (err) {
-                    console.warn('V1 endpoint failed:', err);
-                    error = err;
-                    response = null;
-                }
-            }
-            
-            // If all API endpoints failed, try the test endpoint
-            if (!response) {
-                try {
-                    response = await fetch('/api/voice-test-api', {
+                    },
+                    name: 'Voice dialogue endpoint'
+                },
+                {
+                    url: '/api/v1/voice-order',
+                    options: {
+                        method: 'POST',
+                        body: formData,
+                        credentials: 'include'
+                    },
+                    name: 'V1 REST API endpoint'
+                },
+                {
+                    url: '/api/voice-test-api',
+                    options: {
                         method: 'POST',
                         body: formData
-                    });
-                    console.log('Test endpoint succeeded');
+                    },
+                    name: 'Test API endpoint'
+                }
+            ];
+            
+            // Try each endpoint until one works
+            for (const endpoint of endpoints) {
+                try {
+                    console.log(`Trying ${endpoint.name}...`);
+                    const response = await fetch(endpoint.url, endpoint.options);
                     
-                    // Check if response is ok before continuing
                     if (!response.ok) {
-                        throw new Error('Server returned ' + response.status + ' ' + response.statusText);
+                        console.warn(`${endpoint.name} returned status ${response.status}`);
+                        continue; // Try next endpoint
+                    }
+                    
+                    // Successfully got a response, parse it
+                    data = await response.json();
+                    
+                    // First, check for valid data
+                    if (data && (data.success || (data.transcription || data.text))) {
+                        console.log(`${endpoint.name} succeeded`, data);
+                        break; // Exit the loop with valid data
+                    } else {
+                        console.warn(`${endpoint.name} returned invalid data format`, data);
+                        // If we got invalid data format, keep trying next endpoints
                     }
                 } catch (err) {
-                    console.warn('Test endpoint failed:', err);
-                    error = err;
-                    response = null;
+                    console.warn(`${endpoint.name} failed:`, err.message);
+                    // Continue to next endpoint
                 }
             }
             
-            // If all endpoints failed, show error
-            if (!response) {
-                throw new Error('All API endpoints failed: ' + (error ? error.message : 'Unknown error'));
-            }
-            
-            // Make a clone of the response before reading it
-            const responseClone = response.clone();
-            let data;
-            
-            try {
-                data = await response.json();
-            } catch (err) {
-                console.warn('Failed to parse JSON from response, trying clone:', err);
-                data = await responseClone.json();
+            // If all endpoints failed, throw an error
+            if (!data) {
+                throw new Error('All API endpoints failed');
             }
 
             if (data.success) {
