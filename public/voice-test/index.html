@@ -445,6 +445,7 @@
             recordingTips.classList.remove('hidden');
             
             // Determine supported MIME type
+            // Try to get the best audio format supported by the browser
             let mimeType = 'audio/webm;codecs=opus';
             if (!MediaRecorder.isTypeSupported(mimeType)) {
                 mimeType = 'audio/webm';
@@ -456,22 +457,33 @@
                 }
             }
             
+            console.log('Using audio MIME type:', mimeType || 'browser default');
+            
+            // Enhanced audio constraints for better voice recognition
             const stream = await navigator.mediaDevices.getUserMedia({ 
               audio: {
-                sampleRate: 16000,
-                channelCount: 1,
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
+                sampleRate: 16000,          // 16kHz is best for speech recognition
+                channelCount: 1,            // Mono for better compatibility with speech recognition
+                echoCancellation: true,     // Reduce echo
+                noiseSuppression: true,     // Suppress background noise
+                autoGainControl: true,      // Auto adjust volume
+                latency: 0,                 // Low latency
+                googEchoCancellation: true, // Chrome-specific enhancements
+                googAutoGainControl: true,
+                googNoiseSuppression: true,
               } 
             });
             
+            // Set high quality options for better results
             const options = {
-              audioBitsPerSecond: 128000  // Increased bit rate for better quality
+              audioBitsPerSecond: 128000, // Higher bitrate = better quality
+              bitsPerSecond: 128000      // Overall bitrate
             };
             
+            // Add MIME type if supported
             if (mimeType) {
               options.mimeType = mimeType;
+              console.log('Using explicit MIME type:', mimeType);
             }
             
             mediaRecorder = new MediaRecorder(stream, options);
@@ -519,85 +531,93 @@
         // Log audio details for debugging
         console.log(`Recording complete: ${(audioBlob.size / 1024).toFixed(2)} KB, MIME type: ${mimeType}`);
         
-        const formData = new FormData();
-        formData.append('audio', audioBlob, `recording${mimeType.includes('webm') ? '.webm' : mimeType.includes('ogg') ? '.ogg' : '.wav'}`);
-        formData.append('session_id', sessionId);
-        formData.append('language', 'en-US'); // Hard-code to en-US for better compatibility
+        // Validate audio data before sending
+        if (audioBlob.size === 0 || audioBlob.size < 1000) {
+            statusEl.textContent = '❌ Recording too short or empty. Please try again.';
+            statusEl.className = 'status error';
+            recordingStatus.textContent = 'Click to start recording';
+            return;
+        }
+        
+        // Create a new FormData object for each endpoint attempt
+        function createFormData() {
+            const formData = new FormData();
+            formData.append('audio', audioBlob, `recording${mimeType.includes('webm') ? '.webm' : mimeType.includes('ogg') ? '.ogg' : '.wav'}`);
+            formData.append('session_id', sessionId);
+            formData.append('language', 'en-US'); // Hard-code to en-US for better compatibility
+            return formData;
+        }
 
         try {
             statusEl.textContent = 'Sending audio for processing...';
             
-            // Completely redesigned endpoint fallback system to avoid response stream issues
-            let data = null;
+            // Simple array of endpoints to try
             const endpoints = [
-                {
-                    url: '/api/voice/process',
-                    options: {
-                        method: 'POST',
-                        body: formData,
-                        credentials: 'include'
-                    },
-                    name: 'Primary endpoint'
-                },
-                {
-                    url: '/api/voice-dialogue/process',
-                    options: {
-                        method: 'POST',
-                        body: formData,
-                        credentials: 'include'
-                    },
-                    name: 'Voice dialogue endpoint'
-                },
-                {
-                    url: '/api/v1/voice-order',
-                    options: {
-                        method: 'POST',
-                        body: formData,
-                        credentials: 'include'
-                    },
-                    name: 'V1 REST API endpoint'
-                },
-                {
-                    url: '/api/voice-test-api',
-                    options: {
-                        method: 'POST',
-                        body: formData
-                    },
-                    name: 'Test API endpoint'
-                }
+                '/api/voice/process',
+                '/api/voice-dialogue/process',
+                '/api/v1/voice-order',
+                '/api/voice-test-api'
             ];
-            
-            // Try each endpoint until one works
+
+            let success = false;
+            let data = null;
+
+            // Try each endpoint in sequence
             for (const endpoint of endpoints) {
                 try {
-                    console.log(`Trying ${endpoint.name}...`);
-                    const response = await fetch(endpoint.url, endpoint.options);
+                    console.log(`Trying endpoint: ${endpoint}...`);
                     
-                    if (!response.ok) {
-                        console.warn(`${endpoint.name} returned status ${response.status}`);
+                    // Create a fresh FormData for each attempt
+                    const freshFormData = createFormData();
+                    
+                    // Set options based on whether this is the test endpoint
+                    const options = {
+                        method: 'POST',
+                        body: freshFormData
+                    };
+                    
+                    // Add credentials for non-test endpoints
+                    if (endpoint !== '/api/voice-test-api') {
+                        options.credentials = 'include';
+                    }
+                    
+                    // Fetch with a timeout of 15 seconds
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 15000);
+                    options.signal = controller.signal;
+                    
+                    const res = await fetch(endpoint, options);
+                    clearTimeout(timeoutId);
+                    
+                    if (!res.ok) {
+                        console.warn(`${endpoint} returned status ${res.status}`);
                         continue; // Try next endpoint
                     }
+
+                    data = await res.json();
                     
-                    // Successfully got a response, parse it
-                    data = await response.json();
-                    
-                    // First, check for valid data
-                    if (data && (data.success || (data.transcription || data.text))) {
-                        console.log(`${endpoint.name} succeeded`, data);
-                        break; // Exit the loop with valid data
+                    if (data.success) {
+                        console.log(`${endpoint} succeeded:`, data);
+                        success = true;
+                        break;
+                    } else if (data.transcription || data.text) {
+                        // Some endpoints might return data but without success flag
+                        console.log(`${endpoint} returned data without success flag:`, data);
+                        success = true;
+                        break;
                     } else {
-                        console.warn(`${endpoint.name} returned invalid data format`, data);
-                        // If we got invalid data format, keep trying next endpoints
+                        console.warn(`${endpoint} returned invalid data:`, data);
                     }
                 } catch (err) {
-                    console.warn(`${endpoint.name} failed:`, err.message);
-                    // Continue to next endpoint
+                    console.error(`Error on ${endpoint}:`, err);
                 }
             }
-            
-            // If all endpoints failed, throw an error
-            if (!data) {
-                throw new Error('All API endpoints failed');
+
+            if (!success) {
+                statusEl.textContent = "No transcription detected. Please try again.";
+                statusEl.className = 'status error';
+                recordingStatus.textContent = 'Click to start recording';
+                return;
             }
 
             if (data.success) {
@@ -778,6 +798,10 @@
         statusEl.className = 'status';
         
         try {
+            // Add timeout for the request
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000);
+            
             const response = await fetch('/api/search/category', {
                 method: 'POST',
                 headers: {
@@ -787,23 +811,19 @@
                     category: category,
                     session_id: sessionId
                 }),
-                credentials: 'include'
+                credentials: 'include',
+                signal: controller.signal
             });
+            
+            // Clear the timeout
+            clearTimeout(timeoutId);
             
             if (!response.ok) {
                 throw new Error('Server error: ' + response.status);
             }
             
-            // Clone response before reading it
-            const responseClone = response.clone();
-            let data;
-            
-            try {
-                data = await response.json();
-            } catch (err) {
-                console.warn('Failed to parse category search JSON, trying clone:', err);
-                data = await responseClone.json();
-            }
+            // Read the JSON data from the response (once)
+            const data = await response.json();
             
             if (data.success) {
                 // Display recommendations without confidence warnings since this is a direct category selection
@@ -832,6 +852,10 @@
         statusEl.className = 'status';
         
         try {
+            // Add timeout for the request
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000);
+            
             const response = await fetch('/api/search/text', {
                 method: 'POST',
                 headers: {
@@ -841,23 +865,19 @@
                     query: text,
                     session_id: sessionId
                 }),
-                credentials: 'include'
+                credentials: 'include',
+                signal: controller.signal
             });
+            
+            // Clear the timeout
+            clearTimeout(timeoutId);
             
             if (!response.ok) {
                 throw new Error('Server error: ' + response.status);
             }
             
-            // Clone response before reading it
-            const responseClone = response.clone();
-            let data;
-            
-            try {
-                data = await response.json();
-            } catch (err) {
-                console.warn('Failed to parse text search JSON, trying clone:', err);
-                data = await responseClone.json();
-            }
+            // Read the JSON data from the response (once)
+            const data = await response.json();
             
             if (data.success) {
                 // Update UI with text search results
