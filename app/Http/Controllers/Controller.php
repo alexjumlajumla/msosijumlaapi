@@ -22,8 +22,24 @@ class Controller extends BaseController
         protected ?string $currency = null
     )
     {
+        // Skip database operations if running artisan route:list command
+        if ($this->isRouteListCommand()) {
+            return;
+        }
+
         $this->language = $this->setLanguage();
         $this->currency = $this->setCurrency();
+    }
+
+    /**
+     * Check if current request is from artisan route:list command
+     */
+    protected function isRouteListCommand(): bool
+    {
+        return app()->runningInConsole() && 
+               isset($_SERVER['argv']) && 
+               is_array($_SERVER['argv']) && 
+               (in_array('route:list', $_SERVER['argv']) || in_array('route:clear', $_SERVER['argv']));
     }
 
     /**
