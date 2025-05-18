@@ -484,22 +484,114 @@ This document contains all API endpoints available in the application.
 | GET | `/api/v1/vfd/receipts/{id}` | Get receipt by ID |
 | GET | `/api/v1/vfd/receipts` | Get all receipts |
 
-# Voice Order API Endpoints Documentation
+# Voice Order API Endpoints Reference
 
-## Voice Processing Endpoints
+## Core Voice Processing Endpoints
 
-| Endpoint | Method | Description | Authentication | Rate Limiting |
-|----------|--------|-------------|----------------|---------------|
-| `/api/v1/voice-order` | POST | Process voice recordings for order intent | Optional* | 20 requests/minute |
-| `/api/v1/voice-order/repeat` | POST | Repeat a previous order | Required | 30 requests/minute |
-| `/api/v1/voice-order/realtime-transcription` | POST | Process streaming audio | Optional* | 30 requests/minute |
-| `/api/v1/voice-order/feedback` | POST | Submit feedback on order recommendations | Required | None |
-| `/api/v1/voice-order/history` | GET | Get user's voice order history | Required | None |
-| `/api/v1/voice-order/log/{id}` | GET | Get specific voice order log | Required | None |
-| `/api/v1/voice-order/test-transcribe` | POST | Test speech-to-text without AI processing | None | 30 requests/minute |
-| `/api/v1/voice-order/transcribe` | POST | Transcribe audio to text | None | 30 requests/minute |
+| Endpoint | Method | Description | Auth Required |
+|----------|--------|-------------|--------------|
+| `/api/voice/process` | POST | **Primary endpoint** - Process voice recordings and return product recommendations | Yes |
+| `/api/voice-dialogue/process` | POST | Alternative endpoint for dialogue-based voice processing | Yes |
+| `/api/v1/voice-order` | POST | REST API endpoint for voice order processing | Yes |
+| `/api/voice-test-api` | POST | Test endpoint for development (no auth required) | No |
 
-**Note:** *Authentication currently disabled for testing
+## Voice Order Management
+
+| Endpoint | Method | Description | Auth Required |
+|----------|--------|-------------|--------------|
+| `/api/voice-order/history` | GET | Get user's voice order history | Yes |
+| `/api/voice-order/feedback` | POST | Submit feedback for a voice order | Yes |
+| `/api/voice-order/repeat` | POST | Repeat a previous voice order | Yes |
+
+## Request Parameters
+
+For all voice processing endpoints:
+
+```
+POST /api/voice/process
+Content-Type: multipart/form-data
+
+Parameters:
+- audio: File (audio/webm, audio/ogg, or audio/wav)
+- session_id: String (optional, unique identifier for session)
+- language: String (default: 'en-US')
+```
+
+## Response Format
+
+All voice processing endpoints return responses in this format:
+
+```json
+{
+  "success": true,
+  "transcription": "User's transcribed speech",
+  "intent_data": {
+    "intent": "primary intent (e.g., burger)",
+    "filters": ["vegetarian", "etc"],
+    "cuisine_type": "American",
+    "exclusions": ["item to exclude"],
+    "portion_size": "Regular",
+    "spice_level": "Not specified"
+  },
+  "recommendations": [
+    {
+      "id": 123,
+      "slug": "product-slug",
+      "img": "image-url",
+      "translation": {
+        "title": "Product Title",
+        "description": "Product Description"
+      },
+      "stocks": [
+        {
+          "price": 12000,
+          "quantity": 200
+        }
+      ]
+    }
+  ],
+  "recommendation_text": "AI-generated recommendation text",
+  "session_id": "unique-session-id",
+  "log_id": 123,
+  "voice_order_id": 456
+}
+```
+
+## Cart Integration Endpoints
+
+| Endpoint | Method | Description | Auth Required |
+|----------|--------|-------------|--------------|
+| `/api/cart/add` | POST | Add product to cart | Yes |
+| `/api/orders/create` | POST | Create an order | Yes |
+
+## Common Error Responses
+
+```json
+{
+  "success": false,
+  "message": "Error message description",
+  "transcription_error": "Details about transcription failure (optional)"
+}
+```
+
+## Audio Format Requirements
+
+For optimal voice recognition:
+
+- Sample Rate: 16 kHz (supported rates: 8000, 12000, 16000, 24000, 48000)
+- Format: audio/webm with opus codec preferred
+- Channels: 1 (mono)
+- Echo cancellation and noise suppression recommended
+
+## Authentication
+
+All endpoints except `/api/voice-test-api` require authentication. Include authentication credentials with all requests:
+
+```
+Authorization: Bearer <token>
+```
+
+Or use cookie-based authentication with `credentials: 'include'` when using fetch.
 
 ## Text-based AI Chat Endpoints
 

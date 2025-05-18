@@ -233,6 +233,51 @@
         isRecording ? stopRecording() : startRecording();
     }
 
+    // Check browser compatibility
+    function checkBrowserCompatibility() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            statusEl.textContent = '❌ Your browser doesn\'t support voice recording. Please use Chrome, Firefox, or Edge.';
+            statusEl.className = 'status error';
+            micButton.disabled = true;
+            return false;
+        }
+        return true;
+    }
+    
+    // Initialize the app
+    function initApp() {
+        if (!checkBrowserCompatibility()) return;
+        
+        // Check if MediaRecorder supports our desired format
+        let supportedMimeType = null;
+        const mimeTypes = [
+            'audio/webm;codecs=opus',
+            'audio/webm',
+            'audio/ogg;codecs=opus',
+            'audio/wav'
+        ];
+        
+        for (const mimeType of mimeTypes) {
+            if (MediaRecorder.isTypeSupported(mimeType)) {
+                supportedMimeType = mimeType;
+                console.log(`Browser supports ${mimeType}`);
+                break;
+            }
+        }
+        
+        if (!supportedMimeType) {
+            statusEl.textContent = '❌ Your browser doesn\'t support required audio formats.';
+            statusEl.className = 'status error';
+            micButton.disabled = true;
+            return;
+        }
+        
+        statusEl.textContent = 'Ready to listen for your order.';
+    }
+    
+    // Call initialization function when page loads
+    document.addEventListener('DOMContentLoaded', initApp);
+
     async function startRecording() {
         try {
             // Reset UI
@@ -241,8 +286,34 @@
             dietaryBadges.classList.add('hidden');
             productsContainer.innerHTML = '';
             
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            mediaRecorder = new MediaRecorder(stream);
+            // Determine supported MIME type
+            let mimeType = 'audio/webm;codecs=opus';
+            if (!MediaRecorder.isTypeSupported(mimeType)) {
+                mimeType = 'audio/webm';
+                if (!MediaRecorder.isTypeSupported(mimeType)) {
+                    mimeType = 'audio/ogg;codecs=opus';
+                    if (!MediaRecorder.isTypeSupported(mimeType)) {
+                        mimeType = '';  // Let browser choose
+                    }
+                }
+            }
+            
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: {
+                sampleRate: 16000,
+                channelCount: 1,
+                echoCancellation: true,
+                noiseSuppression: true
+            }});
+            
+            const options = {
+                audioBitsPerSecond: 16000
+            };
+            
+            if (mimeType) {
+                options.mimeType = mimeType;
+            }
+            
+            mediaRecorder = new MediaRecorder(stream, options);
             audioChunks = [];
             
             mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
@@ -275,9 +346,15 @@
     }
 
     async function processAudio() {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        // Get mime type from mediaRecorder
+        const mimeType = mediaRecorder.mimeType || 'audio/webm';
+        const audioBlob = new Blob(audioChunks, { type: mimeType });
+        
+        // Log audio details for debugging
+        console.log(`Recording complete: ${(audioBlob.size / 1024).toFixed(2)} KB, MIME type: ${mimeType}`);
+        
         const formData = new FormData();
-        formData.append('audio', audioBlob, 'recording.webm');
+        formData.append('audio', audioBlob, `recording${mimeType.includes('webm') ? '.webm' : mimeType.includes('ogg') ? '.ogg' : '.wav'}`);
         formData.append('session_id', sessionId);
         formData.append('language', 'en-US'); // Hard-code to en-US for better compatibility
 
@@ -287,6 +364,7 @@
             // Try multiple endpoints in sequence to improve reliability
             let response = null;
             let error = null;
+            let responseData = null;
             
             // Try each endpoint in order until one works
             try {
@@ -295,10 +373,19 @@
                     body: formData,
                     credentials: 'include'
                 });
-                console.log('Primary endpoint succeeded');
+                
+                responseData = await response.json();
+                console.log('Primary endpoint succeeded', responseData);
+                
+                // Check for transcription errors
+                if (!responseData.success && responseData.message && responseData.message.includes("No voice text could be extracted")) {
+                    throw new Error(responseData.message || "Could not transcribe audio");
+                }
+                
             } catch (err) {
                 console.warn('Primary endpoint failed:', err);
                 error = err;
+                response = null;
             }
             
             // If primary failed, try the voice-dialogue endpoint
@@ -381,7 +468,14 @@
                 statusEl.textContent = '✅ Voice order processed successfully!';
                 statusEl.className = 'status success';
             } else {
-                statusEl.textContent = data.message || '❌ Something went wrong.';
+                // Show specific error messages based on error type
+                if (data.message && data.message.includes("sample rate")) {
+                    statusEl.textContent = '❌ Audio format error. Please try again. Technical details: ' + data.message;
+                } else if (data.message && data.message.includes("No voice text")) {
+                    statusEl.textContent = '❌ Could not understand speech. Please speak clearly and try again.';
+                } else {
+                    statusEl.textContent = data.message || '❌ Something went wrong.';
+                }
                 statusEl.className = 'status error';
             }
             

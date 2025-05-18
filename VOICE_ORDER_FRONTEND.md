@@ -1,803 +1,592 @@
-# Voice Order System Frontend - Modern Chat Interface
+# Voice Order Frontend Implementation Guide
 
 ## Overview
 
-This guide outlines the implementation of a modern, OpenAI-style voice ordering interface for your food ordering system. The new interface provides:
+This document provides guidelines for implementing voice ordering functionality in Next.js applications. The voice ordering system allows users to place orders using voice commands, with AI-powered intent detection and product recommendations.
 
-1. A chat-like conversational UI for both voice and text input
-2. Real-time audio transcription with visual feedback
-3. AI-powered food recommendations with product cards
-4. Transparent confidence scoring and error handling
-5. Seamless integration with your existing cart system
+## API Endpoints
 
-## Technology Stack
+The following API endpoints are available for voice order processing:
 
-- **Frontend Framework**: Next.js
-- **UI Components**: Tailwind CSS, shadcn/ui (or MUI/Material UI)
-- **State Management**: React Context API or Zustand/Redux
-- **API Client**: Axios or React Query
-- **Audio Processing**: Web Audio API, MediaRecorder API
+| Endpoint | Description | Authentication |
+|----------|-------------|----------------|
+| `/api/voice/process` | **Primary endpoint** - Process voice recordings and return recommendations | Required |
+| `/api/voice-dialogue/process` | Alternative endpoint for dialogue-based voice processing | Required |
+| `/api/v1/voice-order` | REST API endpoint for voice order processing | Required |
 
-## UI Components Architecture
+## Response Format
 
-### Core Components
-
-1. **`VoiceOrderPage`** - Main page container
-2. **`ChatInterface`** - Manages conversation, messages, and history
-3. **`AudioRecorder`** - Handles voice recording and transcription
-4. **`ProductRecommendations`** - Displays AI-suggested products
-5. **`ConfidenceIndicator`** - Shows AI confidence levels
-
-### Supporting Components
-
-1. **`MessageBubble`** - Individual message bubbles
-2. **`ProductCard`** - Individual product cards
-3. **`AudioVisualizer`** - Waveform display during recording
-4. **`LoadingIndicator`** - Animated loading states
-5. **`ErrorDisplay`** - User-friendly error messages
-
-## API Integration
-
-### Voice Order Endpoints
-
-| Endpoint | Method | Description | Auth |
-|----------|--------|-------------|------|
-| `/api/v1/voice-order` | POST | Process voice recordings | Optional |
-| `/api/v1/voice-order/transcribe` | POST | Transcribe audio only | Public |
-| `/api/v1/voice-order/realtime-transcription` | POST | Real-time transcription | Optional |
-| `/api/v1/voice-order/repeat` | POST | Repeat previous order | Required |
-| `/api/v1/voice-order/feedback` | POST | Submit feedback on recommendations | Required |
-| `/api/v1/voice-order/{id}/retry` | POST | Retry processing a voice order | Required |
-| `/api/v1/voice-order/history` | GET | Get user's voice order history | Required |
-| `/api/v1/voice-order/log/{id}` | GET | Get specific voice order log | Required |
-| `/api/v1/voice-order/{id}/mark-fulfilled` | POST | Mark order as fulfilled | Admin |
-| `/api/v1/voice-order/{id}/assign-agent` | POST | Assign agent to order | Admin |
-| `/api/v1/voice-order/{id}/link-to-order` | POST | Link voice order to regular order | Admin |
-| `/api/v1/voice-order/stats` | GET | Get voice order statistics | Admin |
-| `/api/v1/voice-order/user/{id}` | GET | Get user's voice orders | Admin/Self |
-
-### Voice Order Request Parameters
-
-#### Process Voice Order
-
-```json
-{
-  "audio": "File (audio/webm, audio/mp3, etc.)",
-  "language": "en-US",
-  "session_id": "optional-session-identifier",
-  "shop_id": "optional-shop-id",
-  "currency_id": "optional-currency-id",
-  "address_id": "optional-user-address-id",
-  "delivery_type": "delivery/pickup/dine-in"
-}
-```
-
-#### Response Format
+All endpoints return responses in the following format:
 
 ```json
 {
   "success": true,
-  "transcription": "I want to order a large pizza with pepperoni",
+  "transcription": "User's transcribed speech",
   "intent_data": {
-    "intent": "food_order",
-    "filters": ["pizza", "large", "pepperoni"],
-    "exclusions": []
+    "intent": "primary intent (e.g., burger)",
+    "filters": ["vegetarian", "etc"],
+    "cuisine_type": "American",
+    "exclusions": ["item to exclude"],
+    "portion_size": "Regular",
+    "spice_level": "Not specified"
   },
   "recommendations": [
     {
       "id": 123,
-      "name": "Large Pepperoni Pizza",
-      "price": 12.99,
-      "image_url": "https://example.com/image.jpg",
-      "description": "Classic pepperoni pizza on our signature crust"
+      "slug": "product-slug",
+      "img": "image-url",
+      "translation": {
+        "title": "Product Title",
+        "description": "Product Description"
+      },
+      "stocks": [
+        {
+          "price": 12000,
+          "quantity": 200
+        }
+      ]
+      // Additional product details...
     }
   ],
-  "recommendation_text": "I found a Large Pepperoni Pizza for you. Would you like to add it to your cart?",
-  "session_id": "session-identifier",
-  "voice_order_id": 456,
-  "shop_id": 789,
-  "currency_id": 1,
-  "delivery_fee": 2.50,
-  "total_price": 15.49,
-  "confidence_score": 0.92
+  "recommendation_text": "AI-generated recommendation text",
+  "session_id": "unique-session-id"
 }
 ```
 
-## Modern Chat Interface Implementation
+## NextJS Implementation Example
 
-### Page Layout
+Here's a complete Next.js component implementation for voice ordering:
 
-```tsx
-// pages/voice-order.tsx
-import { useState } from 'react';
-import { ChatInterface } from '@/components/VoiceOrder/ChatInterface';
-import { Header } from '@/components/Layout/Header';
-import { Footer } from '@/components/Layout/Footer';
-
-export default function VoiceOrderPage() {
-  return (
-    <div className="flex flex-col min-h-screen bg-gray-50">
-      <Header title="Voice Order Assistant" />
-      
-      <main className="flex-grow container mx-auto px-4 py-8 max-w-4xl">
-        <ChatInterface />
-      </main>
-      
-      <Footer />
-    </div>
-  );
-}
-```
-
-### Chat Interface Component
-
-```tsx
-// components/VoiceOrder/ChatInterface.tsx
-import { useState, useRef, useEffect } from 'react';
+```jsx
+import { useRef, useState, useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/router';
 import { useSession } from 'next-auth/react';
-import { MessageBubble } from './MessageBubble';
-import { AudioRecorder } from './AudioRecorder';
-import { ProductRecommendations } from './ProductRecommendations';
-import { ConfidenceIndicator } from './ConfidenceIndicator';
-import { 
-  Mic, MicOff, Send, Loader2, RefreshCw, ShoppingCart
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
-import axios from 'axios';
+import { toast } from '@/components/ui/toast';
 
-type Message = {
-  id: string;
-  role: 'user' | 'assistant' | 'system' | 'error';
-  content: string;
-  timestamp: Date;
-  products?: any[];
-  confidenceScore?: number;
-};
-
-export function ChatInterface() {
-  const { data: session } = useSession();
+export default function VoiceOrderPage() {
+  const { data: session, status } = useSession();
   const router = useRouter();
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      role: 'assistant',
-      content: 'Hi! What would you like to order today? You can speak or type your request.',
-      timestamp: new Date(),
-    }
-  ]);
-  const [inputText, setInputText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
+  const [status, setStatus] = useState('Click the mic to begin');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [currentTranscript, setCurrentTranscript] = useState('');
-  const [sessionId, setSessionId] = useState(() => Math.random().toString(36).substring(2, 15));
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [transcription, setTranscription] = useState('');
+  const [recommendation, setRecommendation] = useState('');
+  const [products, setProducts] = useState([]);
+  const [voiceOrderHistory, setVoiceOrderHistory] = useState([]);
+  const mediaRecorderRef = useRef(null);
+  const audioChunks = useRef([]);
   
-  // Scroll to bottom of messages
+  // Check if user is authenticated
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    if (status === 'unauthenticated') {
+      router.push('/login?callbackUrl=/voice-order');
+    }
+    
+    if (status === 'authenticated') {
+      // Load voice order history
+      fetchVoiceOrderHistory();
+    }
+  }, [status, router]);
   
-  const handleSendMessage = async (text: string) => {
-    if (!text.trim()) return;
-    
-    // Add user message
-    const userMessage: Message = {
-      id: Math.random().toString(36).substring(2, 15),
-      role: 'user',
-      content: text,
-      timestamp: new Date(),
-    };
-    
-    setMessages(prev => [...prev, userMessage]);
-    setInputText('');
-    setIsProcessing(true);
-    
+  const fetchVoiceOrderHistory = async () => {
     try {
-      // Call text-based AI ordering API
-      const response = await axios.post('/api/v1/ai-chat', {
-        message: text,
-        session_id: sessionId,
-      }, {
-        headers: session?.user ? {
-          Authorization: `Bearer ${session.accessToken}`
-        } : undefined
-      });
-      
-      if (response.data.success) {
-        // Add assistant response
-        const assistantMessage: Message = {
-          id: Math.random().toString(36).substring(2, 15),
-          role: 'assistant',
-          content: response.data.recommendation_text,
-          timestamp: new Date(),
-          products: response.data.recommendations,
-          confidenceScore: response.data.confidence_score,
-        };
-        
-        setMessages(prev => [...prev, assistantMessage]);
-      } else {
-        throw new Error(response.data.message || 'Failed to process your request');
+      const res = await fetch('/api/voice-order/history');
+      const data = await res.json();
+      if (data.success) {
+        setVoiceOrderHistory(data.orders);
       }
     } catch (error) {
-      console.error('Error processing text request:', error);
+      console.error('Failed to fetch voice order history:', error);
+    }
+  };
+
+  const handleMicClick = async () => {
+    if (!session) {
+      router.push('/login?callbackUrl=/voice-order');
+      return;
+    }
+
+    if (isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      setStatus('Processing...');
+      setIsProcessing(true);
+    } else {
+      try {
+        // Reset states
+        setTranscription('');
+        setRecommendation('');
+        setProducts([]);
+        
+        // Determine supported MIME type
+        let mimeType = 'audio/webm;codecs=opus';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+            mimeType = 'audio/webm';
+            if (!MediaRecorder.isTypeSupported(mimeType)) {
+                mimeType = 'audio/ogg;codecs=opus';
+                if (!MediaRecorder.isTypeSupported(mimeType)) {
+                    mimeType = '';  // Let browser choose
+                }
+            }
+        }
+        
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: {
+            sampleRate: 16000,
+            channelCount: 1,
+            echoCancellation: true,
+            noiseSuppression: true
+          } 
+        });
+        
+        const options = {
+          audioBitsPerSecond: 16000
+        };
+        
+        if (mimeType) {
+          options.mimeType = mimeType;
+        }
+        
+        const recorder = new MediaRecorder(stream, options);
+        mediaRecorderRef.current = recorder;
+        audioChunks.current = [];
+
+        recorder.ondataavailable = e => audioChunks.current.push(e.data);
+        recorder.onstop = handleAudioStop;
+
+        recorder.start();
+        setIsRecording(true);
+        setStatus('Recording... Click to stop');
+      } catch (err) {
+        console.error(err);
+        setStatus('Microphone access denied.');
+        toast({
+          title: "Error",
+          description: "Microphone access denied. Please check your browser permissions.",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
+  const handleAudioStop = async () => {
+    try {
+      // Get mime type from mediaRecorder
+      const mimeType = mediaRecorderRef.current.mimeType || 'audio/webm';
+      const audioBlob = new Blob(audioChunks.current, { type: mimeType });
       
-      // Add error message
-      const errorMessage: Message = {
-        id: Math.random().toString(36).substring(2, 15),
-        role: 'error',
-        content: `Sorry, I couldn't process your request. ${error.message}`,
-        timestamp: new Date(),
-      };
+      console.log(`Recording complete: ${(audioBlob.size / 1024).toFixed(2)} KB, MIME type: ${mimeType}`);
       
-      setMessages(prev => [...prev, errorMessage]);
+      const formData = new FormData();
+      formData.append('audio', audioBlob, `recording${mimeType.includes('webm') ? '.webm' : mimeType.includes('ogg') ? '.ogg' : '.wav'}`);
+      formData.append('session_id', `web-${Date.now()}`);
+      formData.append('language', 'en-US');
+
+      // Try multiple endpoints in sequence to improve reliability
+      let response = null;
+      let error = null;
+      
+      try {
+        response = await fetch('/api/voice/process', {
+          method: 'POST',
+          body: formData,
+          credentials: 'include'
+        });
+        console.log('Primary endpoint succeeded');
+      } catch (err) {
+        console.warn('Primary endpoint failed:', err);
+        error = err;
+        response = null;
+      }
+      
+      // If primary failed, try the voice-dialogue endpoint
+      if (!response || !response.ok) {
+        try {
+          response = await fetch('/api/voice-dialogue/process', {
+            method: 'POST',
+            body: formData,
+            credentials: 'include'
+          });
+          console.log('Voice-dialogue endpoint succeeded');
+        } catch (err) {
+          console.warn('Voice-dialogue endpoint failed:', err);
+          error = err;
+          response = null;
+        }
+      }
+      
+      // If both failed, try the v1 endpoint
+      if (!response || !response.ok) {
+        try {
+          response = await fetch('/api/v1/voice-order', {
+            method: 'POST',
+            body: formData,
+            credentials: 'include'
+          });
+          console.log('V1 endpoint succeeded');
+        } catch (err) {
+          console.warn('V1 endpoint failed:', err);
+          error = err;
+          response = null;
+        }
+      }
+      
+      // If all endpoints failed, show error
+      if (!response || !response.ok) {
+        throw new Error('All API endpoints failed: ' + (error ? error.message : 'Unknown error'));
+      }
+
+      const data = await response.json();
+      if (data.success) {
+        setTranscription(data.transcription);
+        setRecommendation(data.intent_data?.intent || '');
+        setProducts(data.recommendations || []);
+        setStatus('Order processed.');
+
+        // Quick checkout if order contains "cash" or "checkout"
+        if (data.transcription.toLowerCase().includes('cash') || 
+            data.transcription.toLowerCase().includes('checkout') || 
+            data.transcription.toLowerCase().includes('pay')) {
+          
+          // Add products to cart
+          for (const product of data.recommendations.slice(0, 3)) { // Limit to top 3 products
+            await fetch('/api/cart/add', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ 
+                product_id: product.id, 
+                quantity: 1,
+                shop_id: product.shop_id 
+              }),
+            });
+          }
+
+          if (data.transcription.toLowerCase().includes('cash')) {
+            // Create cash order
+            await fetch('/api/orders/create', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ payment_method: 'cash' }),
+            });
+            router.push('/orders/voice-success');
+          } else {
+            // Redirect to checkout for other payment methods
+            router.push('/checkout');
+          }
+          return;
+        }
+        
+        // Send feedback about successful processing
+        await fetch('/api/voice-order/feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            voice_order_id: data.voice_order_id,
+            feedback: 'positive', 
+            rating: 5 
+          }),
+        });
+      } else {
+        setStatus('Processing failed. Try again or use buttons below.');
+        toast({
+          title: "Processing Failed",
+          description: data.message || "Could not process your voice order. Please try again.",
+          variant: "destructive",
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      setStatus('Error submitting audio.');
+      toast({
+        title: "Error",
+        description: "Failed to process audio. Please try again.",
+        variant: "destructive",
+      });
     } finally {
       setIsProcessing(false);
     }
   };
-  
-  const handleVoiceResult = (result: any) => {
-    if (result.transcription) {
-      // Add user message with transcription
-      const userMessage: Message = {
-        id: Math.random().toString(36).substring(2, 15),
-        role: 'user',
-        content: result.transcription,
-        timestamp: new Date(),
-      };
-      
-      // Add assistant response
-      const assistantMessage: Message = {
-        id: Math.random().toString(36).substring(2, 15),
-        role: 'assistant',
-        content: result.recommendation_text,
-        timestamp: new Date(),
-        products: result.recommendations,
-        confidenceScore: result.confidence_score,
-      };
-      
-      setMessages(prev => [...prev, userMessage, assistantMessage]);
-    } else if (result.error) {
-      // Add error message
-      const errorMessage: Message = {
-        id: Math.random().toString(36).substring(2, 15),
-        role: 'error',
-        content: `Sorry, I couldn't process your voice request. ${result.error}`,
-        timestamp: new Date(),
-      };
-      
-      setMessages(prev => [...prev, errorMessage]);
-    }
-  };
-  
-  const addToCart = async (productId: number, quantity: number = 1) => {
+
+  const addToCart = async (product) => {
     try {
-      // Call your existing cart API
-      const response = await axios.post('/api/cart/add', {
-        product_id: productId,
-        quantity: quantity
-      }, {
-        headers: session?.user ? {
-          Authorization: `Bearer ${session.accessToken}`
-        } : undefined
+      await fetch('/api/cart/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          product_id: product.id, 
+          quantity: 1,
+          shop_id: product.shop_id 
+        }),
       });
       
-      if (response.data.success) {
-        // Show success message
-        const successMessage: Message = {
-          id: Math.random().toString(36).substring(2, 15),
-          role: 'system',
-          content: `Added ${quantity} item(s) to your cart!`,
-          timestamp: new Date(),
-        };
-        
-        setMessages(prev => [...prev, successMessage]);
-      }
+      toast({
+        title: "Added to Cart",
+        description: `${product.translation.title} added to your cart.`,
+        variant: "success",
+      });
     } catch (error) {
-      console.error('Error adding to cart:', error);
-    }
-  };
-  
-  return (
-    <div className="rounded-lg border bg-card shadow-sm flex flex-col h-[80vh]">
-      {/* Message history */}
-      <div className="flex-grow overflow-y-auto p-4 space-y-4">
-        {messages.map(message => (
-          <MessageBubble
-            key={message.id}
-            message={message}
-            onAddToCart={addToCart}
-          />
-        ))}
-        
-        {/* Realtime transcript display */}
-        {isRecording && currentTranscript && (
-          <div className="bg-gray-100 rounded-lg p-3 italic text-gray-700">
-            Hearing: {currentTranscript}...
-          </div>
-        )}
-        
-        {/* Processing indicator */}
-        {isProcessing && (
-          <div className="flex items-center space-x-2 text-gray-500">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            <span>Processing your request...</span>
-          </div>
-        )}
-        
-        <div ref={messagesEndRef} />
-      </div>
-      
-      {/* Input area */}
-      <div className="p-4 border-t">
-        {isRecording ? (
-          <div className="flex flex-col space-y-2">
-            <AudioRecorder 
-              isRecording={isRecording}
-              onTranscriptUpdate={setCurrentTranscript}
-              onResult={handleVoiceResult}
-              onStop={() => setIsRecording(false)}
-              sessionId={sessionId}
-            />
-            <Button 
-              variant="destructive" 
-              onClick={() => setIsRecording(false)}
-              className="w-full"
-            >
-              <MicOff className="h-4 w-4 mr-2" /> Stop Recording
-            </Button>
-          </div>
-        ) : (
-          <div className="flex space-x-2">
-            <Textarea
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              placeholder="Type your order here..."
-              className="flex-grow"
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSendMessage(inputText);
-                }
-              }}
-            />
-            <div className="flex flex-col space-y-2">
-              <Button 
-                onClick={() => handleSendMessage(inputText)}
-                disabled={!inputText.trim() || isProcessing}
-              >
-                <Send className="h-4 w-4" />
-              </Button>
-              <Button 
-                variant="outline" 
-                onClick={() => setIsRecording(true)}
-              >
-                <Mic className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-```
-
-### Product Recommendations Component
-
-```tsx
-// components/VoiceOrder/ProductRecommendations.tsx
-import Image from 'next/image';
-import { Button } from '@/components/ui/button';
-import { PlusCircle, ShoppingCart } from 'lucide-react';
-import { ConfidenceIndicator } from './ConfidenceIndicator';
-
-type ProductRecommendationsProps = {
-  products: any[];
-  onAddToCart: (productId: number, quantity?: number) => void;
-  confidenceScore?: number;
-};
-
-export function ProductRecommendations({ 
-  products, 
-  onAddToCart,
-  confidenceScore 
-}: ProductRecommendationsProps) {
-  if (!products || products.length === 0) return null;
-  
-  return (
-    <div className="mt-2 space-y-4">
-      {confidenceScore !== undefined && (
-        <ConfidenceIndicator score={confidenceScore} />
-      )}
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        {products.slice(0, 4).map(product => (
-          <div 
-            key={product.id}
-            className="flex rounded-lg border overflow-hidden shadow-sm hover:shadow-md transition-shadow"
-          >
-            {product.image_url && (
-              <div className="w-24 h-24 relative">
-                <Image
-                  src={product.image_url}
-                  alt={product.translation?.title || product.title}
-                  fill
-                  sizes="96px"
-                  className="object-cover"
-                />
-              </div>
-            )}
-            
-            <div className="flex-grow p-3 flex flex-col justify-between">
-              <div>
-                <h4 className="font-medium">
-                  {product.translation?.title || product.title}
-                </h4>
-                <p className="text-sm text-gray-500 line-clamp-1">
-                  {product.translation?.description || product.description}
-                </p>
-                <p className="font-bold mt-1">
-                  ${product.price?.toFixed(2) || '0.00'}
-                </p>
-              </div>
-              
-              <Button 
-                size="sm" 
-                onClick={() => onAddToCart(product.id)}
-                className="mt-2 self-end"
-              >
-                <PlusCircle className="h-4 w-4 mr-1" /> Add
-              </Button>
-            </div>
-          </div>
-        ))}
-      </div>
-      
-      {products.length > 4 && (
-        <p className="text-sm text-gray-500">
-          + {products.length - 4} more recommendations
-        </p>
-      )}
-    </div>
-  );
-}
-```
-
-### Audio Recorder Component
-
-```tsx
-// components/VoiceOrder/AudioRecorder.tsx
-import { useState, useRef, useEffect } from 'react';
-import axios from 'axios';
-import { useSession } from 'next-auth/react';
-import { Loader2 } from 'lucide-react';
-
-type AudioRecorderProps = {
-  isRecording: boolean;
-  onTranscriptUpdate: (transcript: string) => void;
-  onResult: (result: any) => void;
-  onStop: () => void;
-  sessionId: string;
-};
-
-export function AudioRecorder({
-  isRecording,
-  onTranscriptUpdate,
-  onResult,
-  onStop,
-  sessionId
-}: AudioRecorderProps) {
-  const { data: session } = useSession();
-  const [error, setError] = useState<string | null>(null);
-  const [audioLevel, setAudioLevel] = useState(0);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const streamRef = useRef<MediaStream | null>(null);
-  
-  // Set up audio recording
-  useEffect(() => {
-    if (isRecording) {
-      startRecording();
-    } else if (mediaRecorderRef.current) {
-      stopRecording();
-    }
-    
-    return () => {
-      cleanupAudio();
-    };
-  }, [isRecording]);
-  
-  // Set up audio visualization
-  useEffect(() => {
-    if (streamRef.current && isRecording) {
-      visualizeAudio();
-    }
-  }, [streamRef.current, isRecording]);
-  
-  const startRecording = async () => {
-    try {
-      setError(null);
-      
-      // Get microphone access
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      
-      // Set up audio context for visualization
-      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-      audioContextRef.current = audioContext;
-      
-      const analyser = audioContext.createAnalyser();
-      analyserRef.current = analyser;
-      analyser.fftSize = 256;
-      
-      const source = audioContext.createMediaStreamSource(stream);
-      source.connect(analyser);
-      
-      // Set up media recorder
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-      
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-      
-      mediaRecorder.onstop = async () => {
-        await processAudio();
-      };
-      
-      // Start recording
-      mediaRecorder.start(200); // Collect data every 200ms
-      
-      // Set up speech recognition for real-time feedback
-      setupSpeechRecognition();
-      
-    } catch (err) {
-      console.error('Failed to start recording:', err);
-      setError('Could not access microphone. Please ensure you have given permission.');
-      onStop();
-    }
-  };
-  
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-      mediaRecorderRef.current.stop();
-    }
-    cleanupAudio();
-  };
-  
-  const cleanupAudio = () => {
-    // Stop all tracks
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    
-    // Clean up audio context
-    if (audioContextRef.current) {
-      if (audioContextRef.current.state !== 'closed') {
-        audioContextRef.current.close();
-      }
-      audioContextRef.current = null;
-      analyserRef.current = null;
-    }
-  };
-  
-  const visualizeAudio = () => {
-    if (!analyserRef.current || !isRecording) return;
-    
-    const analyser = analyserRef.current;
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    
-    const updateLevels = () => {
-      if (!analyserRef.current || !isRecording) return;
-      
-      analyser.getByteFrequencyData(dataArray);
-      
-      // Calculate average volume
-      let sum = 0;
-      for (let i = 0; i < bufferLength; i++) {
-        sum += dataArray[i];
-      }
-      const average = sum / bufferLength;
-      const level = Math.min(100, Math.max(0, average / 256 * 100));
-      setAudioLevel(level);
-      
-      // Continue animation
-      requestAnimationFrame(updateLevels);
-    };
-    
-    updateLevels();
-  };
-  
-  const setupSpeechRecognition = () => {
-    if (!('webkitSpeechRecognition' in window)) return;
-    
-    const SpeechRecognition = (window as any).webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
-    
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-    
-    recognition.onresult = (event: any) => {
-      let interimTranscript = '';
-      let finalTranscript = '';
-      
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript;
-        } else {
-          interimTranscript += transcript;
-        }
-      }
-      
-      onTranscriptUpdate(finalTranscript + interimTranscript);
-    };
-    
-    recognition.start();
-  };
-  
-  const processAudio = async () => {
-    try {
-      // Create audio blob
-      const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-      if (audioBlob.size < 1000) {
-        throw new Error('Recording too short');
-      }
-      
-      // Create form data
-      const formData = new FormData();
-      formData.append('audio', audioBlob, 'recording.webm');
-      formData.append('session_id', sessionId);
-      
-      // Get user's active address if available
-      const userData = session?.user?.userData;
-      if (userData?.active_address?.id) {
-        formData.append('address_id', userData.active_address.id);
-      }
-      
-      // Get shop ID if we're in shop context
-      const shopId = localStorage.getItem('current_shop_id');
-      if (shopId) {
-        formData.append('shop_id', shopId);
-      }
-      
-      // Send to API
-      const response = await axios.post('/api/v1/voice-order', formData, {
-        headers: session?.user ? {
-          Authorization: `Bearer ${session.accessToken}`,
-          'Content-Type': 'multipart/form-data',
-        } : {
-          'Content-Type': 'multipart/form-data',
-        }
+      console.error('Failed to add to cart:', error);
+      toast({
+        title: "Error",
+        description: "Failed to add item to cart.",
+        variant: "destructive",
       });
-      
-      // Handle response
-      onResult(response.data);
-      
-    } catch (err) {
-      console.error('Error processing audio:', err);
-      onResult({ error: err.message || 'Failed to process audio' });
-    } finally {
-      onStop();
     }
   };
-  
-  // Render audio wave visualization
-  const waveElements = Array.from({ length: 10 }).map((_, i) => {
-    const height = Math.max(4, (audioLevel / 100) * 32);
-    const randomFactor = Math.sin(Date.now() / 200 + i) * 0.5 + 0.5;
-    const barHeight = Math.max(4, height * randomFactor);
-    
-    return (
-      <div 
-        key={i}
-        className="bg-primary w-1 mx-px rounded-full"
-        style={{ height: `${barHeight}px` }}
-      />
-    );
-  });
-  
+
+  if (status === 'loading') {
+    return <div className="flex justify-center items-center min-h-screen">Loading...</div>;
+  }
+
   return (
-    <div className="bg-gray-50 p-4 rounded-lg">
-      <div className="flex justify-center items-center space-x-4">
-        <div className="relative">
-          <div className="h-12 w-12 rounded-full bg-red-100 animate-pulse flex items-center justify-center">
-            <div className="h-6 w-6 rounded-full bg-red-500" />
+    <div className="max-w-4xl mx-auto py-10 px-4">
+      <h1 className="text-3xl font-semibold mb-4">Voice Order Assistant</h1>
+      <p className="text-muted-foreground mb-6">Tap the mic and say something like "I want a burger" or "vegetarian lunch".</p>
+
+      <div className="flex justify-center mb-4">
+        <Button 
+          onClick={handleMicClick} 
+          disabled={isProcessing}
+          className={`rounded-full h-20 w-20 text-2xl ${isRecording ? 'bg-green-500' : isProcessing ? 'bg-yellow-500' : 'bg-red-500'}`}
+        >
+          {isRecording ? '🎙️' : isProcessing ? '⏳' : '🎤'}
+        </Button>
+      </div>
+
+      <p className="text-center text-sm mb-6 text-muted-foreground">{status}</p>
+
+      {transcription && (
+        <div className="mb-4">
+          <h3 className="text-lg font-medium">Transcription:</h3>
+          <p className="bg-muted p-3 rounded-md mt-2 text-sm">{transcription}</p>
+        </div>
+      )}
+
+      {recommendation && (
+        <div className="mb-4">
+          <h3 className="text-lg font-medium">Detected Intent:</h3>
+          <Badge>{recommendation}</Badge>
+        </div>
+      )}
+
+      {products.length > 0 && (
+        <>
+          <h3 className="text-lg font-medium mb-3">Recommendations:</h3>
+          <div className="grid md:grid-cols-3 gap-4 mt-2">
+            {products.map(product => (
+              <Card key={product.id} className="backdrop-blur-sm bg-white/30 shadow-xl">
+                <CardContent className="p-4">
+                  <img
+                    src={product.img || 'https://via.placeholder.com/150'}
+                    alt={product.translation?.title || 'Product'}
+                    className="rounded-md w-full h-32 object-cover"
+                  />
+                  <h4 className="font-semibold mt-2 text-base">{product.translation?.title}</h4>
+                  <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{product.translation?.description}</p>
+                  <div className="flex justify-between items-center mt-2">
+                    <p className="text-sm font-medium text-green-600">
+                      {product.stocks?.[0]?.price ? `${(product.stocks[0].price / 100).toFixed(2)} TZS` : 'N/A'}
+                    </p>
+                    <Button size="sm" onClick={() => addToCart(product)}>Add to Cart</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
-          <div className="absolute -bottom-1 -right-1">
-            <div className="h-4 w-4 rounded-full bg-red-500 animate-ping" />
+          
+          <div className="mt-6 flex justify-center gap-4">
+            <Button variant="outline" onClick={() => router.push('/cart')}>Go to Cart</Button>
+            <Button onClick={() => router.push('/checkout')}>Checkout</Button>
+          </div>
+        </>
+      )}
+
+      {voiceOrderHistory.length > 0 && (
+        <div className="mt-10">
+          <h3 className="text-lg font-medium mb-3">Voice Order History</h3>
+          <div className="space-y-3">
+            {voiceOrderHistory.map(order => (
+              <Card key={order.id} className="bg-white/30">
+                <CardContent className="p-4">
+                  <div className="flex justify-between mb-2">
+                    <Badge variant={order.status === 'completed' ? 'success' : 'secondary'}>
+                      {order.status}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(order.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="text-sm font-medium">{order.transcription || 'No transcription'}</p>
+                  {order.recommendations && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {order.recommendations.slice(0, 3).map(item => (
+                        <Badge key={item.id} variant="outline">{item.translation?.title}</Badge>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-2 flex justify-end">
+                    <Button 
+                      size="sm" 
+                      variant="ghost" 
+                      onClick={() => router.push(`/orders/${order.order_id}`)}
+                      disabled={!order.order_id}
+                    >
+                      {order.order_id ? 'View Order' : 'No Order Created'}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
           </div>
         </div>
-        
-        <div className="text-sm">
-          <div className="font-medium">Recording your voice...</div>
-          <div className="text-gray-500">Speak clearly to place your order</div>
-        </div>
-      </div>
-      
-      <div className="mt-4 h-8 flex items-center justify-center space-x-1">
-        {waveElements}
-      </div>
-      
-      {error && (
-        <div className="mt-2 text-sm text-red-500">{error}</div>
       )}
     </div>
   );
 }
 ```
 
-## Installation and Setup
+## Integration with Cart and Checkout
 
-1. **Install required dependencies**:
+### Cart Integration
 
-```bash
-npm install next react react-dom axios @tanstack/react-query lucide-react date-fns
-npm install tailwindcss postcss autoprefixer
-npm install @radix-ui/react-icons
-npx tailwindcss init -p
+Voice orders can be integrated with your existing cart system:
+
+1. After processing the voice order, add recommended products to the cart
+2. Direct users to the cart for review before checkout
+3. Implement quick checkout for "cash" orders
+
+```jsx
+// Add to cart example
+const addToCart = async (product) => {
+  await fetch('/api/cart/add', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 
+      product_id: product.id, 
+      quantity: 1,
+      shop_id: product.shop_id 
+    }),
+  });
+};
 ```
 
-2. **Configure TailwindCSS**:
+### Checkout Integration
 
-```js
-// tailwind.config.js
-module.exports = {
-  content: [
-    './pages/**/*.{js,ts,jsx,tsx}',
-    './components/**/*.{js,ts,jsx,tsx}',
-  ],
-  theme: {
-    extend: {},
-  },
-  plugins: [],
+For voice orders, support two checkout paths:
+
+1. **Express checkout**: When the user says "cash" or "pay with cash"
+   - Automatically create an order with cash payment method
+   - Redirect to order success page
+
+2. **Regular checkout**: For all other payment methods
+   - Add items to cart
+   - Redirect to checkout page for payment selection
+
+```jsx
+// Cash order example
+if (transcription.toLowerCase().includes('cash')) {
+  await fetch('/api/orders/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ payment_method: 'cash' }),
+  });
+  router.push('/orders/voice-success');
+} else {
+  router.push('/checkout');
 }
 ```
 
-3. **Create API client**:
+## Audio Handling Best Practices
 
-```js
-// lib/api.js
-import axios from 'axios';
+For optimal voice recognition:
 
-const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL,
-  timeout: 30000,
+1. **Sample Rate**: Use 16kHz for best compatibility with Google Speech API
+2. **Audio Format**: Use `audio/webm;codecs=opus` if supported
+3. **Channel Count**: Use a single channel (mono) recording
+4. **Audio Processing**: Enable noise suppression and echo cancellation
+
+```javascript
+// Optimal audio settings
+const stream = await navigator.mediaDevices.getUserMedia({ 
+  audio: {
+    sampleRate: 16000,
+    channelCount: 1,
+    echoCancellation: true,
+    noiseSuppression: true
+  } 
 });
 
-export default api;
+const options = {
+  mimeType: 'audio/webm;codecs=opus',
+  audioBitsPerSecond: 16000
+};
 ```
 
-## Deployment Checklist
+## Error Handling
 
-- [ ] Configure environment variables in production
-- [ ] Ensure proper CORS settings on backend
-- [ ] Test with various browsers and devices
-- [ ] Implement error tracking and monitoring
-- [ ] Create fallback mechanisms for unsupported browsers
+Implement robust error handling for:
 
-## Security Considerations
+1. Microphone access denial
+2. Network connectivity issues
+3. Audio processing failures
+4. Authentication failures
 
-- Always transmit audio using HTTPS
-- Implement rate limiting on all voice endpoints
-- Consider implementing audio encryption for privacy
-- Store user voice preferences securely
-- Implement proper permission checks on all API endpoints
+Use a fallback mechanism to try multiple endpoints when one fails.
 
-## Performance Optimization
+## Authentication
 
-- Use WebWorkers for audio processing when possible
-- Implement lazy loading for components not in view
-- Use efficient state management to prevent re-renders
-- Optimize API responses for minimal payload size
-- Implement proper caching strategies 
+Users must be authenticated to use voice ordering. Implement:
+
+1. Session checking before recording
+2. Redirect to login if unauthenticated
+3. Return to voice order page after login
+
+## Responsive Design
+
+The voice order interface should be responsive for both desktop and mobile:
+
+1. Large, easily tappable microphone button
+2. Clear visual feedback during recording
+3. Readable transcription and recommendations
+4. Touch-friendly product cards
+
+## Accessibility
+
+Ensure voice ordering is accessible:
+
+1. Provide alternative text input for users unable to use voice
+2. Include keyboard navigation support
+3. Provide clear visual and text feedback
+4. Use ARIA attributes for screen reader support
+
+## API References
+
+### Voice Processing
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/voice/process` | POST | Process voice recording |
+| `/api/voice-order/history` | GET | Get user's voice order history |
+| `/api/voice-order/feedback` | POST | Submit feedback for a voice order |
+
+### Cart & Checkout Integration
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/cart/add` | POST | Add product to cart |
+| `/api/orders/create` | POST | Create an order |
+| `/api/cart` | GET | Get current cart items |
+
+## Testing
+
+Test the voice order system thoroughly:
+
+1. Test with different accents and languages
+2. Test with background noise
+3. Test with different product requests
+4. Test on different devices and browsers
+5. Test authentication and authorization
+6. Test integration with cart and checkout 
