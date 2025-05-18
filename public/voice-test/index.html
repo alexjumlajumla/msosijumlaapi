@@ -524,34 +524,27 @@
     }
 
     async function processAudio() {
-        // Get mime type from mediaRecorder
         const mimeType = mediaRecorder.mimeType || 'audio/webm';
         const audioBlob = new Blob(audioChunks, { type: mimeType });
-        
-        // Log audio details for debugging
-        console.log(`Recording complete: ${(audioBlob.size / 1024).toFixed(2)} KB, MIME type: ${mimeType}`);
-        
-        // Validate audio data before sending
+
         if (audioBlob.size === 0 || audioBlob.size < 1000) {
             statusEl.textContent = '❌ Recording too short or empty. Please try again.';
             statusEl.className = 'status error';
             recordingStatus.textContent = 'Click to start recording';
             return;
         }
-        
-        // Create a new FormData object for each endpoint attempt
-        function createFormData() {
+
+        const createFormData = () => {
             const formData = new FormData();
-            formData.append('audio', audioBlob, `recording${mimeType.includes('webm') ? '.webm' : mimeType.includes('ogg') ? '.ogg' : '.wav'}`);
+            formData.append('audio', audioBlob, `recording${mimeType.includes('webm') ? '.webm' : '.ogg'}`);
             formData.append('session_id', sessionId);
-            formData.append('language', 'en-US'); // Hard-code to en-US for better compatibility
+            formData.append('language', 'en-US');
             return formData;
-        }
+        };
 
         try {
             statusEl.textContent = 'Sending audio for processing...';
-            
-            // Simple array of endpoints to try
+
             const endpoints = [
                 '/api/voice/process',
                 '/api/voice-dialogue/process',
@@ -562,169 +555,86 @@
             let success = false;
             let data = null;
 
-            // Try each endpoint in sequence
             for (const endpoint of endpoints) {
                 try {
-                    console.log(`Trying endpoint: ${endpoint}...`);
-                    
-                    // Create a fresh FormData for each attempt
-                    const freshFormData = createFormData();
-                    
-                    // Set options based on whether this is the test endpoint
-                    const options = {
-                        method: 'POST',
-                        body: freshFormData
-                    };
-                    
-                    // Add credentials for non-test endpoints
-                    if (endpoint !== '/api/voice-test-api') {
-                        options.credentials = 'include';
-                    }
-                    
-                    // Fetch with a timeout of 15 seconds
+                    const formData = createFormData();
                     const controller = new AbortController();
                     const timeoutId = setTimeout(() => controller.abort(), 15000);
-                    options.signal = controller.signal;
-                    
-                    const res = await fetch(endpoint, options);
-                    clearTimeout(timeoutId);
-                    
-                    if (!res.ok) {
-                        console.warn(`${endpoint} returned status ${res.status}`);
-                        continue; // Try next endpoint
-                    }
 
-                    data = await res.json();
-                    
-                    if (data.success) {
-                        console.log(`${endpoint} succeeded:`, data);
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        body: formData,
+                        credentials: endpoint.includes('voice-test') ? 'same-origin' : 'include',
+                        signal: controller.signal
+                    });
+
+                    clearTimeout(timeoutId);
+
+                    if (!response.ok) continue;
+                    const json = await response.json();
+
+                    if (json.success || json.transcription || json.text) {
+                        data = json;
                         success = true;
+                        console.log(`✅ ${endpoint} responded:`, data);
                         break;
-                    } else if (data.transcription || data.text) {
-                        // Some endpoints might return data but without success flag
-                        console.log(`${endpoint} returned data without success flag:`, data);
-                        success = true;
-                        break;
-                    } else {
-                        console.warn(`${endpoint} returned invalid data:`, data);
                     }
                 } catch (err) {
-                    console.error(`Error on ${endpoint}:`, err);
+                    console.warn(`⚠️ Error calling ${endpoint}:`, err);
                 }
             }
 
-            if (!success) {
-                statusEl.textContent = "No transcription detected. Please try again.";
+            if (!success || !data) {
+                statusEl.textContent = '❌ Could not understand your voice. Try again.';
                 statusEl.className = 'status error';
-                recordingStatus.textContent = 'Click to start recording';
                 return;
             }
 
-            if (data.success) {
-                // Hide recording tips when we have results
-                recordingTips.classList.add('hidden');
-                
-                // Display transcription even if confidence is low
-                transcriptionText.textContent = data.transcription || data.text || 'N/A';
-                transcriptionContainer.classList.remove('hidden');
-                
-                // Add confidence indicator if available
-                if (data.confidence_score !== undefined) {
-                    const confidenceEl = displayConfidence(data.confidence_score);
-                    transcriptionContainer.appendChild(confidenceEl);
-                    
-                    // If confidence is low, show a hint to the user
-                    if (data.confidence_score < 0.7) {
-                        const hint = document.createElement('p');
-                        hint.innerHTML = '<small style="color:#ff6b6b">Tip: Speak clearly and reduce background noise for better results.</small>';
-                        transcriptionContainer.appendChild(hint);
-                    }
-                }
-                
-                // Weigh recommendations based on confidence before displaying
-                const confidenceScore = data.confidence_score !== undefined ? data.confidence_score : 0.5;
-                const fallbackOptions = document.getElementById('fallbackOptions');
-                
-                // Handle based on confidence tiers
-                if (confidenceScore < 0.4) {
-                    // Very low confidence - show fallback UI
-                    fallbackOptions.classList.remove('hidden');
-                    recommendationText.textContent = "I couldn't clearly understand your request. Please try speaking more clearly, or use one of the options below.";
-                    recommendationContainer.classList.remove('hidden');
-                } else if (confidenceScore < 0.7) {
-                    // Medium confidence - show recommendations but with caution message
-                    if (data.recommendation_text) {
-                        recommendationText.textContent = data.recommendation_text + "\n\n(Note: I'm not completely confident I understood correctly. Please confirm if this matches your request.)";
-                        recommendationContainer.classList.remove('hidden');
-                    } else if (data.openai_analysis) {
-                        // Handle test API format
-                        const messageContent = data.openai_analysis.choices[0].message.content;
-                        recommendationText.textContent = messageContent + "\n\n(Note: I'm not completely confident I understood correctly. Please confirm if this matches your request.)";
-                        recommendationContainer.classList.remove('hidden');
-                    }
-                } else {
-                    // High confidence - show recommendations normally
-                    if (data.recommendation_text) {
-                        recommendationText.textContent = data.recommendation_text;
-                        recommendationContainer.classList.remove('hidden');
-                    } else if (data.openai_analysis) {
-                        // Handle test API format
-                        const messageContent = data.openai_analysis.choices[0].message.content;
-                        recommendationText.textContent = messageContent;
-                        recommendationContainer.classList.remove('hidden');
-                    } else {
-                        // If no recommendation is provided but we have transcription,
-                        // show a generic message
-                        recommendationText.textContent = "I understood your request but couldn't generate specific recommendations. Try being more specific about what food you're looking for.";
-                        recommendationContainer.classList.remove('hidden');
-                    }
-                }
-                
-                // Display dietary preferences if any
-                if (data.dietary_preferences && data.dietary_preferences.length > 0) {
-                    displayDietaryPreferences(data.dietary_preferences);
-                }
-                
-                // Display product recommendations based on confidence score
-                if (data.recommendations && data.recommendations.length > 0) {
-                    const confidenceScore = data.confidence_score !== undefined ? data.confidence_score : 0.5;
-                    
-                    if (confidenceScore < 0.4) {
-                        // Very low confidence - don't show potentially incorrect recommendations
-                        productsContainer.innerHTML = '<p class="text-center py-4">Could not generate reliable recommendations due to unclear audio. Please try again or use the options above.</p>';
-                    } else if (confidenceScore < 0.7) {
-                        // Medium confidence - show recommendations with disclaimer
-                        productsContainer.innerHTML = '<p style="color: #ff9800; text-align: center; margin-bottom: 1rem;">⚠️ These recommendations are based on what I think I heard. They might not be exactly what you wanted.</p>';
-                        displayProducts(data.recommendations);
-                    } else {
-                        // High confidence - show recommendations normally
-                        displayProducts(data.recommendations);
-                    }
-                } else if (data.transcription || data.text) {
-                    // If we have transcription but no recommendations, show a message
-                    productsContainer.innerHTML = '<p class="text-center py-4">No specific product recommendations found. Try being more specific about what you\'re looking for.</p>';
-                }
-                
-                statusEl.textContent = '✅ Voice processed successfully!';
-                statusEl.className = 'status success';
-            } else {
-                // Show specific error messages based on error type
-                if (data.message && data.message.includes("sample rate")) {
-                    statusEl.textContent = '❌ Audio format error. Please try again. Technical details: ' + data.message;
-                } else if (data.message && data.message.includes("No voice text")) {
-                    statusEl.textContent = '❌ Could not understand speech. Please speak clearly and try again.';
-                } else {
-                    statusEl.textContent = data.message || '❌ Something went wrong.';
-                }
-                statusEl.className = 'status error';
+            // ✅ Show transcription
+            const transcript = data.transcription || data.text || 'Not recognized';
+            transcriptionText.textContent = transcript;
+            transcriptionContainer.classList.remove('hidden');
+
+            // ✅ Show fallback if confidence is very low
+            const confidence = typeof data.confidence_score === 'number' ? data.confidence_score : 0.7;
+            if (confidence < 0.4) {
+                fallbackOptions.classList.remove('hidden');
             }
-            
-            // Reset recording status
+
+            // ✅ Show recommendation text
+            const recommendationMsg =
+                data.recommendation_text ||
+                data?.openai_analysis?.choices?.[0]?.message?.content ||
+                (data.intent_data?.intent ? `You asked about: ${data.intent_data.intent}` : '');
+
+            if (recommendationMsg) {
+                recommendationText.textContent = recommendationMsg;
+                recommendationContainer.classList.remove('hidden');
+            }
+
+            // ✅ Show dietary badges (if any)
+            if (Array.isArray(data.dietary_preferences) && data.dietary_preferences.length > 0) {
+                displayDietaryPreferences(data.dietary_preferences);
+            }
+
+            // ✅ Show products
+            if (Array.isArray(data.recommendations) && data.recommendations.length > 0) {
+                if (confidence < 0.4) {
+                    productsContainer.innerHTML = `<p class="text-center py-4">⚠️ Low confidence in audio. Results may not match. Try again or use buttons below.</p>`;
+                }
+                displayProducts(data.recommendations);
+            } else {
+                productsContainer.innerHTML = `<p class="text-center py-4">No products found. Try rephrasing your order.</p>`;
+            }
+
+            statusEl.textContent = '✅ Voice processed successfully!';
+            statusEl.className = 'status success';
             recordingStatus.textContent = 'Click to start recording';
-            
+            recordingTips.classList.add('hidden');
+
         } catch (e) {
             console.error('Error processing audio:', e);
-            statusEl.textContent = '❌ Network or server error: ' + e.message;
+            statusEl.textContent = `❌ ${e.message || 'Error sending audio.'}`;
             statusEl.className = 'status error';
             recordingStatus.textContent = 'Click to start recording';
         }
