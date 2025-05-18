@@ -1879,3 +1879,58 @@ Route::group(['prefix' => 'v1/dashboard/admin/ai-assistant', 'middleware' => ['a
     Route::get('/top-exclusions', [App\Http\Controllers\Admin\AIAssistantController::class, 'getTopExclusions']);
     Route::get('/log/{id}', [App\Http\Controllers\Admin\AIAssistantController::class, 'getLog']);
 });
+
+// Add this route near the other OpenAI test routes
+Route::get('/debug-openai-config', function() {
+    $result = [
+        'environment' => app()->environment(),
+        'openai_key_from_env' => env('OPENAI_API_KEY') ? substr(env('OPENAI_API_KEY'), 0, 5) . '...' : null,
+        'openai_key_from_config' => config('services.openai.api_key') ? substr(config('services.openai.api_key'), 0, 5) . '...' : null,
+        'services_config' => config('services'),
+        'env_file_exists' => file_exists(base_path('.env')),
+        'env_local_exists' => file_exists(base_path('.env.local')),
+    ];
+    
+    // Test AIOrderService initialization
+    try {
+        $aiService = new App\Services\AIOrderService();
+        $reflection = new ReflectionClass($aiService);
+        $property = $reflection->getProperty('apiInitialized');
+        $property->setAccessible(true);
+        $apiInitialized = $property->getValue($aiService);
+        
+        $result['ai_service_initialized'] = $apiInitialized;
+    } catch (\Exception $e) {
+        $result['ai_service_error'] = $e->getMessage();
+    }
+    
+    return response()->json($result);
+});
+
+// Add this test endpoint for direct AIOrderService testing
+Route::get('/test-ai-order-service', function() {
+    $aiService = new App\Services\AIOrderService();
+    
+    try {
+        // Process a simple test order intent
+        $result = $aiService->processOrderIntent('I would like to order a vegetarian pizza', null);
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'AIOrderService test completed successfully',
+            'result' => $result
+        ]);
+    } catch (\Exception $e) {
+        \Log::error('Error in test-ai-order-service endpoint', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'Error testing AIOrderService: ' . $e->getMessage(),
+            'error' => $e->getMessage(),
+            'trace' => explode("\n", $e->getTraceAsString())
+        ], 500);
+    }
+});

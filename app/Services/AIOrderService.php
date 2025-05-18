@@ -23,11 +23,22 @@ class AIOrderService
             try {
                 $this->openAi = new OpenAi($apiKey);
                 $this->apiInitialized = true;
+                Log::info('OpenAI client initialized successfully with API key: ' . substr($apiKey, 0, 5) . '...');
             } catch (\Exception $e) {
-                Log::error('Failed to initialize OpenAI client: ' . $e->getMessage());
+                Log::error('Failed to initialize OpenAI client: ' . $e->getMessage(), [
+                    'exception' => get_class($e),
+                    'trace' => $e->getTraceAsString(),
+                    'api_key_length' => strlen($apiKey)
+                ]);
                 $this->apiInitialized = false;
             }
         } else {
+            Log::error('OpenAI API key is empty or not set in configuration', [
+                'api_key_from_env' => !empty(env('OPENAI_API_KEY')) ? 'Set (length: ' . strlen(env('OPENAI_API_KEY')) . ')' : 'Not set',
+                'api_key_from_config' => 'Not set',
+                'services_config_exists' => !empty(config('services')) ? 'Yes' : 'No',
+                'openai_config_exists' => !empty(config('services.openai')) ? 'Yes' : 'No'
+            ]);
             $this->apiInitialized = false;
         }
     }

@@ -785,6 +785,46 @@
                 alert('Error adding product to cart');
             }
         }
+
+        // Add this function to the voice test page to check the OpenAI configuration
+        function checkOpenAIConfig() {
+            fetch('/api/debug-openai-config')
+                .then(response => response.json())
+                .then(data => {
+                    const debugElement = document.getElementById('openai-debug') || document.createElement('div');
+                    debugElement.id = 'openai-debug';
+                    debugElement.innerHTML = `
+                        <h3>OpenAI Configuration Debug</h3>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    `;
+                    document.body.appendChild(debugElement);
+                })
+                .catch(error => {
+                    console.error('Failed to fetch OpenAI config:', error);
+                });
+        }
+
+        // Add this button to the UI
+        // Add this near the end of your body, before the closing </body> tag
+        document.addEventListener('DOMContentLoaded', function() {
+            const buttonContainer = document.createElement('div');
+            buttonContainer.style.marginTop = '20px';
+            
+            const debugButton = document.createElement('button');
+            debugButton.textContent = 'Debug OpenAI Config';
+            debugButton.onclick = checkOpenAIConfig;
+            debugButton.className = 'btn btn-secondary';
+            
+            buttonContainer.appendChild(debugButton);
+            
+            // Find the results container and add the button after it
+            const resultsContainer = document.querySelector('.results-container');
+            if (resultsContainer) {
+                resultsContainer.parentNode.insertBefore(buttonContainer, resultsContainer.nextSibling);
+            } else {
+                document.body.appendChild(buttonContainer);
+            }
+        });
     </script>
 </body>
 </html>
