@@ -13,6 +13,15 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Exception;
 use RuntimeException;
+use App\Models\VoiceOrder;
+use App\Models\User;
+use App\Models\AIAssistantLog;
+use App\Models\Order;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Database\Eloquent\Collection;
+use Carbon\Carbon;
 
 class VoiceOrderService
 {
@@ -521,5 +530,350 @@ class VoiceOrderService
     public function __destruct()
     {
         $this->speechClient->close();
+    }
+
+    /**
+     * Get the audio duration using ffprobe if available
+     * 
+     * @param string $filePath Path to audio file
+     * @return float|null Duration in seconds or null if couldn't determine
+     */
+    public function getAudioDuration(string $filePath): ?float
+    {
+        // Check if ffprobe is available on the system
+        $ffprobeAvailable = false;
+        try {
+            exec('which ffprobe', $output, $returnVar);
+            $ffprobeAvailable = ($returnVar === 0);
+        } catch (\Exception $e) {
+            Log::warning('Failed to check for ffprobe: ' . $e->getMessage());
+        }
+        
+        if (!$ffprobeAvailable) {
+            Log::info('ffprobe not available for audio duration detection');
+            return null;
+        }
+        
+        try {
+            // Execute ffprobe to get duration
+            $command = "ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 " . escapeshellarg($filePath);
+            $output = [];
+            exec($command, $output, $returnVar);
+            
+            if ($returnVar === 0 && !empty($output[0])) {
+                return (float) $output[0];
+            }
+        } catch (\Exception $e) {
+            Log::warning('Error getting audio duration: ' . $e->getMessage());
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Create a new VoiceOrder record from the given data
+     * 
+     * @param array $data The voice order data including transcription, intent, etc.
+     * @param User|null $user The authenticated user, if any
+     * @return VoiceOrder The created voice order
+     */
+    public function createVoiceOrder(array $data, ?User $user = null): VoiceOrder
+    {
+        // Prepare data for voice order model
+        $voiceOrderData = [
+            'user_id' => $user?->id,
+            'session_id' => $data['session_id'] ?? null,
+            'transcription_text' => $data['transcription'] ?? $data['transcription_text'] ?? null,
+            'intent_data' => $data['intent_data'] ?? null,
+            'filters_detected' => $data['filters_detected'] ?? null,
+            'product_ids' => $data['product_ids'] ?? null,
+            'recommendation_text' => $data['recommendation_text'] ?? null,
+            'audio_url' => $data['audio_url'] ?? null,
+            'audio_format' => $data['audio_format'] ?? null,
+            'status' => 'pending',
+            'processing_time_ms' => $data['processing_time_ms'] ?? null,
+            'confidence_score' => $data['confidence'] ?? null,
+            'log_id' => $data['log_id'] ?? null,
+        ];
+        
+        // Get audio duration if file path is provided and not already set
+        if (!isset($voiceOrderData['audio_duration']) && isset($data['audio_file_path'])) {
+            $voiceOrderData['audio_duration'] = $this->getAudioDuration($data['audio_file_path']);
+        }
+        
+        // Create and save the voice order
+        $voiceOrder = new VoiceOrder($voiceOrderData);
+        $voiceOrder->save();
+        
+        return $voiceOrder;
+    }
+    
+    /**
+     * Mark a voice order as fulfilled by staff
+     * 
+     * @param int $id Voice order ID
+     * @param int|null $agentId User ID of staff member who fulfilled it
+     * @return VoiceOrder|null Updated voice order or null if not found
+     */
+    public function markAsFulfilled(int $id, ?int $agentId = null): ?VoiceOrder
+    {
+        $voiceOrder = VoiceOrder::find($id);
+        
+        if (!$voiceOrder) {
+            return null;
+        }
+        
+        $voiceOrder->status = 'fulfilled';
+        $voiceOrder->assigned_agent_id = $agentId ?? Auth::id();
+        $voiceOrder->save();
+        
+        return $voiceOrder;
+    }
+    
+    /**
+     * Assign a voice order to an agent
+     * 
+     * @param int $id Voice order ID
+     * @param int $agentId User ID of staff member/agent
+     * @return VoiceOrder|null Updated voice order or null if not found
+     */
+    public function assignAgent(int $id, int $agentId): ?VoiceOrder
+    {
+        $voiceOrder = VoiceOrder::find($id);
+        
+        if (!$voiceOrder) {
+            return null;
+        }
+        
+        $voiceOrder->assigned_agent_id = $agentId;
+        $voiceOrder->save();
+        
+        return $voiceOrder;
+    }
+    
+    /**
+     * Save feedback for a voice order
+     * 
+     * @param int $id Voice order ID
+     * @param array $feedback Feedback data
+     * @return VoiceOrder|null Updated voice order or null if not found
+     */
+    public function saveFeedback(int $id, array $feedback): ?VoiceOrder
+    {
+        $voiceOrder = VoiceOrder::find($id);
+        
+        if (!$voiceOrder) {
+            return null;
+        }
+        
+        $voiceOrder->is_feedback_provided = true;
+        $voiceOrder->was_helpful = $feedback['was_helpful'] ?? null;
+        $voiceOrder->feedback = $feedback;
+        $voiceOrder->save();
+        
+        // Also update the AI log if available
+        if ($voiceOrder->log_id) {
+            $log = AIAssistantLog::find($voiceOrder->log_id);
+            if ($log) {
+                $log->is_feedback_provided = true;
+                $log->was_helpful = $feedback['was_helpful'] ?? null;
+                $log->feedback_comment = $feedback['comment'] ?? null;
+                $log->feedback = $feedback;
+                $log->save();
+            }
+        }
+        
+        return $voiceOrder;
+    }
+    
+    /**
+     * Link a voice order to a regular order when it's converted
+     * 
+     * @param int $voiceOrderId Voice order ID
+     * @param int $orderId Regular order ID
+     * @return VoiceOrder|null Updated voice order or null if not found
+     */
+    public function linkToOrder(int $voiceOrderId, int $orderId): ?VoiceOrder
+    {
+        $voiceOrder = VoiceOrder::find($voiceOrderId);
+        
+        if (!$voiceOrder) {
+            return null;
+        }
+        
+        $voiceOrder->order_id = $orderId;
+        $voiceOrder->status = 'converted';
+        $voiceOrder->save();
+        
+        return $voiceOrder;
+    }
+    
+    /**
+     * Get voice order statistics
+     * 
+     * @param string|null $period Time period ('today', 'week', 'month', 'all')
+     * @return array Statistics data
+     */
+    public function getStats(?string $period = 'all'): array
+    {
+        $query = VoiceOrder::query();
+        
+        // Apply time filter
+        switch ($period) {
+            case 'today':
+                $query->whereDate('created_at', Carbon::today());
+                break;
+            case 'week':
+                $query->where('created_at', '>=', Carbon::now()->subWeek());
+                break;
+            case 'month':
+                $query->where('created_at', '>=', Carbon::now()->subMonth());
+                break;
+            case 'all':
+            default:
+                // No filter - get all
+                break;
+        }
+        
+        // Get counts by status
+        $statusCounts = $query->select('status', DB::raw('count(*) as total'))
+            ->groupBy('status')
+            ->pluck('total', 'status')
+            ->toArray();
+            
+        // Get conversion rate
+        $totalCount = array_sum($statusCounts);
+        $convertedCount = $statusCounts['converted'] ?? 0;
+        $conversionRate = $totalCount > 0 ? round(($convertedCount / $totalCount) * 100, 2) : 0;
+        
+        // Get average confidence score
+        $avgConfidence = VoiceOrder::avg('confidence_score');
+        
+        // Get most common intents/filters
+        $popularFilters = $this->getPopularFilters($period);
+        
+        return [
+            'total_count' => $totalCount,
+            'status_counts' => $statusCounts,
+            'conversion_rate' => $conversionRate,
+            'average_confidence' => round($avgConfidence ?? 0, 2),
+            'popular_filters' => $popularFilters,
+            'time_period' => $period
+        ];
+    }
+    
+    /**
+     * Get most popular filters/tags from voice orders
+     * 
+     * @param string|null $period Time period
+     * @return array Popular filters with counts
+     */
+    private function getPopularFilters(?string $period = 'all'): array
+    {
+        $query = VoiceOrder::query();
+        
+        // Apply time filter same as getStats()
+        switch ($period) {
+            case 'today':
+                $query->whereDate('created_at', Carbon::today());
+                break;
+            case 'week':
+                $query->where('created_at', '>=', Carbon::now()->subWeek());
+                break;
+            case 'month':
+                $query->where('created_at', '>=', Carbon::now()->subMonth());
+                break;
+        }
+        
+        // Get orders with filters
+        $orders = $query->whereNotNull('filters_detected')
+            ->get();
+            
+        // Extract and count filters
+        $filterCounts = [];
+        foreach ($orders as $order) {
+            $filters = $order->filters_detected['filters'] ?? [];
+            foreach ($filters as $filter) {
+                $filter = strtolower($filter);
+                if (!isset($filterCounts[$filter])) {
+                    $filterCounts[$filter] = 0;
+                }
+                $filterCounts[$filter]++;
+            }
+        }
+        
+        // Sort by popularity
+        arsort($filterCounts);
+        
+        // Return top 10
+        return array_slice($filterCounts, 0, 10, true);
+    }
+    
+    /**
+     * Get voice orders for a specific user
+     * 
+     * @param int $userId User ID
+     * @param int $limit Max number of orders to return
+     * @return Collection Voice orders
+     */
+    public function getUserVoiceOrders(int $userId, int $limit = 50): Collection
+    {
+        return VoiceOrder::where('user_id', $userId)
+            ->with(['order', 'assignedAgent'])
+            ->orderBy('created_at', 'desc')
+            ->limit($limit)
+            ->get();
+    }
+    
+    /**
+     * Retry processing a failed voice order
+     * 
+     * @param int $id Voice order ID
+     * @param AIOrderService $aiOrderService
+     * @param FoodIntelligenceService $foodIntelligenceService
+     * @return VoiceOrder|null Updated voice order or null if failed
+     */
+    public function retryProcessing(int $id, AIOrderService $aiOrderService, FoodIntelligenceService $foodIntelligenceService): ?VoiceOrder
+    {
+        $voiceOrder = VoiceOrder::find($id);
+        
+        if (!$voiceOrder || empty($voiceOrder->transcription_text)) {
+            return null;
+        }
+        
+        try {
+            $startTime = microtime(true);
+            
+            // Get user if available
+            $user = $voiceOrder->user;
+            
+            // Reprocess the order intent
+            $transcription = $voiceOrder->transcription_text;
+            $orderData = $aiOrderService->processOrderIntent($transcription, $user);
+            
+            // Get recommendations
+            $recommendations = $foodIntelligenceService->filterProducts($orderData, $user);
+            
+            // Generate text recommendation
+            $recommendationText = $aiOrderService->generateRecommendation($orderData);
+            
+            // Update the voice order
+            $voiceOrder->intent_data = $orderData;
+            $voiceOrder->filters_detected = $orderData;
+            $voiceOrder->product_ids = $recommendations->pluck('id')->toArray();
+            $voiceOrder->recommendation_text = $recommendationText;
+            $voiceOrder->ai_processing_duration_ms = (int)((microtime(true) - $startTime) * 1000);
+            $voiceOrder->status = 'pending'; // Reset to pending
+            $voiceOrder->save();
+            
+            return $voiceOrder;
+        } catch (\Exception $e) {
+            Log::error('Failed to retry voice order processing: ' . $e->getMessage(), [
+                'voice_order_id' => $id,
+                'exception' => $e
+            ]);
+            
+            return null;
+        }
     }
 } 

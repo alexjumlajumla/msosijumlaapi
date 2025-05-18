@@ -1938,16 +1938,30 @@ Route::get('/test-ai-order-service', function() {
 
 // Voice Order system endpoints
 Route::prefix('v1')->group(function () {
-    // Existing voice order routes
+    // Public voice order routes 
     Route::post('/voice-order', [VoiceOrderController::class, 'processVoiceOrder']);
     Route::post('/voice-order/test-transcribe', [VoiceOrderController::class, 'testTranscribe']);
     Route::post('/voice-order/transcribe', [VoiceOrderController::class, 'transcribe']);
-    Route::post('/voice-order/realtime-transcription', [VoiceOrderController::class, 'realtimeTranscription'])->middleware('auth:sanctum');
-    Route::post('/voice-order/repeat', [VoiceOrderController::class, 'repeatOrder'])->middleware('auth:sanctum');
-    Route::post('/voice-order/feedback', [VoiceOrderController::class, 'processFeedback'])->middleware('auth:sanctum');
-    Route::get('/voice-order/history', [VoiceOrderController::class, 'getOrderHistory'])->middleware('auth:sanctum');
-    Route::get('/voice-order/log/{id}', [VoiceOrderController::class, 'getVoiceLog'])->middleware('auth:sanctum');
     Route::post('/test-openai-key', [VoiceOrderController::class, 'testOpenAIKey']);
+    
+    // Authenticated voice order routes
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::post('/voice-order/realtime-transcription', [VoiceOrderController::class, 'realtimeTranscription']);
+        Route::post('/voice-order/repeat', [VoiceOrderController::class, 'repeatOrder']);
+        Route::post('/voice-order/feedback', [VoiceOrderController::class, 'processFeedback']);
+        Route::get('/voice-order/history', [VoiceOrderController::class, 'getOrderHistory']);
+        Route::get('/voice-order/log/{id}', [VoiceOrderController::class, 'getVoiceLog']);
+        Route::post('/voice-order/{id}/retry', [VoiceOrderController::class, 'retryProcessing']);
+        Route::post('/voice-order/{id}/link-order', [VoiceOrderController::class, 'linkToOrder']);
+    });
+    
+    // Admin-only voice order routes
+    Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
+        Route::post('/voice-order/{id}/mark-fulfilled', [VoiceOrderController::class, 'markAsFulfilled']);
+        Route::post('/voice-order/{id}/assign-agent', [VoiceOrderController::class, 'assignAgent']);
+        Route::get('/voice-order/stats', [VoiceOrderController::class, 'getStats']);
+        Route::get('/voice-order/user/{userId}', [VoiceOrderController::class, 'getUserVoiceOrders']);
+    });
     
     // New AI Chat endpoints
     Route::post('/ai-chat', [AIChatController::class, 'processTextOrder']);

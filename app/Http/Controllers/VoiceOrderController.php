@@ -14,6 +14,9 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Exception;
 use Illuminate\Support\Facades\Storage;
+use App\Models\VoiceOrder;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\Validator;
 
 class VoiceOrderController extends Controller
 {
@@ -86,6 +89,9 @@ class VoiceOrderController extends Controller
             $audioFilePath = $audioFile->getPathname();
             $language = $request->input('language', 'en-US');
             
+            // Track the transcription start time
+            $transcriptionStartTime = microtime(true);
+            
             // Save audio file to S3
             $audioUrl = $this->saveAudioFileToS3($audioFile, $sessionId);
             
@@ -124,6 +130,10 @@ class VoiceOrderController extends Controller
                 $logData['metadata']['cached'] = false;
             }
             
+            // Record transcription duration
+            $transcriptionDuration = (int)((microtime(true) - $transcriptionStartTime) * 1000);
+            $logData['metadata']['transcription_duration_ms'] = $transcriptionDuration;
+            
             // Process the transcript with user context if available
             $user = Auth::check() ? Auth::user() : null;
             
@@ -146,6 +156,9 @@ class VoiceOrderController extends Controller
             // Store the transcription in logData
             $logData['input'] = $transcriptionText;
             $logData['request_content'] = $transcriptionText;
+            
+            // Track AI processing time
+            $aiStartTime = microtime(true);
                 
             // Fix: Pass transcription as string to processOrderIntent
             \Log::info('Processing order intent', ['text' => $transcriptionText]);
@@ -165,12 +178,16 @@ class VoiceOrderController extends Controller
 
             // Get product recommendations based on order data
             \Log::info('Getting product recommendations', ['filters' => $orderData]);
-            $recommendations = $this->foodIntelligenceService->filterProducts($orderData);
+            $recommendations = $this->foodIntelligenceService->filterProducts($orderData, $user);
             \Log::info('Recommendations retrieved', ['count' => $recommendations->count()]);
             
             // Generate a recommendation explanation
             $recommendationText = $this->aiOrderService->generateRecommendation($orderData);
             \Log::info('Generated recommendation text', ['text' => $recommendationText]);
+            
+            // Record AI processing duration
+            $aiProcessingDuration = (int)((microtime(true) - $aiStartTime) * 1000);
+            $logData['metadata']['ai_processing_duration_ms'] = $aiProcessingDuration;
             
             // Update log data with recommendations
             $logData['product_ids'] = $recommendations->pluck('id')->toArray();
@@ -198,6 +215,33 @@ class VoiceOrderController extends Controller
             $logData['processing_time_ms'] = (int)((microtime(true) - $startTime) * 1000);
             $logEntry = AIAssistantLog::create($logData);
             
+            // Calculate the average score from recommendations if available
+            $avgScore = 0;
+            if ($recommendations->isNotEmpty() && $recommendations->first()->score) {
+                $avgScore = $recommendations->avg('score');
+            }
+            
+            // Create a VoiceOrder record
+            $voiceOrderData = [
+                'session_id' => $sessionId,
+                'transcription' => $transcriptionText,
+                'intent_data' => $orderData,
+                'filters_detected' => $orderData,
+                'product_ids' => $recommendations->pluck('id')->toArray(),
+                'recommendation_text' => $recommendationText,
+                'audio_url' => $logData['audio_url'] ?? null,
+                'audio_format' => $logData['audio_format'] ?? null,
+                'audio_file_path' => $audioFilePath,
+                'confidence' => $transcription['confidence'] ?? null,
+                'processing_time_ms' => $logData['processing_time_ms'],
+                'transcription_duration_ms' => $transcriptionDuration,
+                'ai_processing_duration_ms' => $aiProcessingDuration,
+                'score' => $avgScore,
+                'log_id' => $logEntry->id
+            ];
+            
+            $voiceOrder = $this->voiceOrderService->createVoiceOrder($voiceOrderData, $user);
+            
             $response = [
                 'success' => true, 
                 'transcription' => $transcriptionText,
@@ -205,12 +249,15 @@ class VoiceOrderController extends Controller
                 'recommendations' => $recommendations,
                 'recommendation_text' => $recommendationText,
                 'session_id' => $sessionId,
-                'log_id' => $logEntry->id
+                'log_id' => $logEntry->id,
+                'voice_order_id' => $voiceOrder->id,
+                'confidence_score' => $transcription['confidence'] ?? null
             ];
             
             \Log::info('Voice order processed successfully', [
                 'session_id' => $sessionId,
                 'log_id' => $logEntry->id,
+                'voice_order_id' => $voiceOrder->id,
                 'processing_time_ms' => $logData['processing_time_ms']
             ]);
             
@@ -227,25 +274,16 @@ class VoiceOrderController extends Controller
             $logData['response_content'] = $e->getMessage();
             
             // More detailed error for debugging
-            $errorDetails = [
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => explode("\n", $e->getTraceAsString())
-            ];
-            
-            // Calculate processing time
-            $logData['processing_time_ms'] = (int)((microtime(true) - $startTime) * 1000);
-            $logData['successful'] = false;
-            $logEntry = AIAssistantLog::create($logData);
-            
             return response()->json([
-                'success' => false, 
-                'message' => 'Failed to process voice order. Error: ' . $e->getMessage(),
-                'error' => $e->getMessage(),
-                'error_details' => $errorDetails,
-                'log_id' => $logEntry->id
+                'success' => false,
+                'message' => 'Error processing voice order: ' . $e->getMessage(),
+                'error_type' => get_class($e)
             ], 500);
+        } finally {
+            // Always create log entry even on error
+            if (!$success) {
+                AIAssistantLog::create($logData);
+            }
         }
     }
     
@@ -1003,5 +1041,183 @@ class VoiceOrderController extends Controller
             ]);
             return null;
         }
+    }
+
+    /**
+     * Mark a voice order as fulfilled
+     * 
+     * @param int $id Voice order ID
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function markAsFulfilled($id)
+    {
+        // Admin permissions check
+        if (!Auth::user()->can('manage_orders')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        
+        $voiceOrder = $this->voiceOrderService->markAsFulfilled($id);
+        
+        if (!$voiceOrder) {
+            return response()->json(['message' => 'Voice order not found'], 404);
+        }
+        
+        return response()->json([
+            'message' => 'Voice order marked as fulfilled',
+            'voice_order' => $voiceOrder
+        ]);
+    }
+    
+    /**
+     * Assign an agent to a voice order
+     * 
+     * @param int $id Voice order ID
+     * @param \Illuminate\Http\Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function assignAgent($id, Request $request)
+    {
+        // Admin permissions check
+        if (!Auth::user()->can('manage_orders')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        
+        $validator = Validator::make($request->all(), [
+            'agent_id' => 'required|exists:users,id'
+        ]);
+        
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+        
+        $voiceOrder = $this->voiceOrderService->assignAgent($id, $request->input('agent_id'));
+        
+        if (!$voiceOrder) {
+            return response()->json(['message' => 'Voice order not found'], 404);
+        }
+        
+        return response()->json([
+            'message' => 'Agent assigned successfully',
+            'voice_order' => $voiceOrder
+        ]);
+    }
+    
+    /**
+     * Retry processing a voice order
+     * 
+     * @param int $id Voice order ID
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function retryProcessing($id)
+    {
+        // Check permissions
+        if (!Auth::check()) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+        
+        // Only allow the user who created the voice order or admins
+        $voiceOrder = VoiceOrder::find($id);
+        if (!$voiceOrder) {
+            return response()->json(['message' => 'Voice order not found'], 404);
+        }
+        
+        if ($voiceOrder->user_id != Auth::id() && !Auth::user()->can('manage_orders')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        
+        $updatedVoiceOrder = $this->voiceOrderService->retryProcessing(
+            $id, 
+            $this->aiOrderService, 
+            $this->foodIntelligenceService
+        );
+        
+        if (!$updatedVoiceOrder) {
+            return response()->json([
+                'message' => 'Failed to reprocess voice order'
+            ], 500);
+        }
+        
+        // Get product details for response
+        $productIds = $updatedVoiceOrder->product_ids ?? [];
+        $recommendations = [];
+        
+        if (!empty($productIds)) {
+            $recommendations = Product::whereIn('id', $productIds)
+                ->with(['translation', 'stocks'])
+                ->get();
+        }
+        
+        return response()->json([
+            'message' => 'Voice order reprocessed successfully',
+            'voice_order' => $updatedVoiceOrder,
+            'recommendations' => $recommendations
+        ]);
+    }
+    
+    /**
+     * Get voice order statistics
+     * 
+     * @param \Illuminate\Http\Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getStats(Request $request)
+    {
+        // Admin permissions check
+        if (!Auth::user()->can('view_reports')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        
+        $period = $request->input('period', 'all');
+        $stats = $this->voiceOrderService->getStats($period);
+        
+        return response()->json($stats);
+    }
+    
+    /**
+     * Get voice orders for a specific user
+     * 
+     * @param int $userId User ID
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function getUserVoiceOrders($userId)
+    {
+        // Admin permissions check or self-access
+        if (Auth::id() != $userId && !Auth::user()->can('manage_orders')) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        
+        $voiceOrders = $this->voiceOrderService->getUserVoiceOrders($userId);
+        
+        return response()->json(['voice_orders' => $voiceOrders]);
+    }
+    
+    /**
+     * Link a voice order to a regular order
+     * 
+     * @param int $voiceOrderId Voice order ID
+     * @param \Illuminate\Http\Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function linkToOrder($voiceOrderId, Request $request)
+    {
+        // Validate
+        $validator = Validator::make($request->all(), [
+            'order_id' => 'required|exists:orders,id'
+        ]);
+        
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+        
+        $voiceOrder = $this->voiceOrderService->linkToOrder($voiceOrderId, $request->input('order_id'));
+        
+        if (!$voiceOrder) {
+            return response()->json(['message' => 'Voice order not found'], 404);
+        }
+        
+        return response()->json([
+            'message' => 'Voice order linked to order successfully',
+            'voice_order' => $voiceOrder
+        ]);
     }
 } 

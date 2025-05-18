@@ -1,1081 +1,738 @@
-# Voice Order System Frontend Integration Guide
+# Voice Order System Frontend - Modern Chat Interface
 
 ## Overview
 
-This guide will help you integrate voice ordering capabilities into your existing food ordering system. This enhanced interface will allow users to:
+This guide outlines the implementation of a modern, OpenAI-style voice ordering interface for your food ordering system. The new interface provides:
 
-1. Record their voice to place food orders
-2. Type text messages in a chat interface
-3. Switch seamlessly between voice and text input
-4. View real-time transcription feedback
-5. Receive AI-powered food recommendations
-6. Browse recommended products
-7. Continue to checkout using your existing flow
+1. A chat-like conversational UI for both voice and text input
+2. Real-time audio transcription with visual feedback
+3. AI-powered food recommendations with product cards
+4. Transparent confidence scoring and error handling
+5. Seamless integration with your existing cart system
 
-## Integration Strategy
+## Technology Stack
 
-Instead of building a separate voice ordering system, we'll:
-1. Add voice + chat components to your existing UI
-2. Use your current product/shop/category API endpoints
-3. Leverage your existing checkout flow
-4. Maintain consistent UX across input methods
+- **Frontend Framework**: Next.js
+- **UI Components**: Tailwind CSS, shadcn/ui (or MUI/Material UI)
+- **State Management**: React Context API or Zustand/Redux
+- **API Client**: Axios or React Query
+- **Audio Processing**: Web Audio API, MediaRecorder API
 
-## API Endpoints
+## UI Components Architecture
 
-Your backend already provides these key endpoints for voice processing:
+### Core Components
+
+1. **`VoiceOrderPage`** - Main page container
+2. **`ChatInterface`** - Manages conversation, messages, and history
+3. **`AudioRecorder`** - Handles voice recording and transcription
+4. **`ProductRecommendations`** - Displays AI-suggested products
+5. **`ConfidenceIndicator`** - Shows AI confidence levels
+
+### Supporting Components
+
+1. **`MessageBubble`** - Individual message bubbles
+2. **`ProductCard`** - Individual product cards
+3. **`AudioVisualizer`** - Waveform display during recording
+4. **`LoadingIndicator`** - Animated loading states
+5. **`ErrorDisplay`** - User-friendly error messages
+
+## API Integration
 
 ### Voice Order Endpoints
 
-| Endpoint | Method | Description | Authentication |
-|----------|--------|-------------|----------------|
-| `/api/v1/voice-order` | POST | Process voice recordings for order intent | Optional* |
-| `/api/v1/voice-order/feedback` | POST | Submit feedback on order recommendations | Required |
-| `/api/v1/voice-order/history` | GET | Get user's voice order history | Required |
-| `/api/v1/voice-order/log/{id}` | GET | Get details of a specific voice order log | Required |
-| `/api/v1/voice-order/realtime-transcription` | POST | Process streaming audio | Optional* |
-| `/api/v1/voice-order/repeat` | POST | Repeat a previous order | Required |
-| `/api/v1/voice-order/test-transcribe` | POST | Test speech-to-text without AI processing | None |
-| `/api/v1/voice-order/transcribe` | POST | Transcribe audio to text | None |
-| `/api/v1/test-openai-key` | POST | Test OpenAI API key configuration | None |
+| Endpoint | Method | Description | Auth |
+|----------|--------|-------------|------|
+| `/api/v1/voice-order` | POST | Process voice recordings | Optional |
+| `/api/v1/voice-order/{id}/retry` | POST | Retry processing a voice order | Required |
+| `/api/v1/voice-order/feedback` | POST | Submit feedback on recommendations | Required |
+| `/api/v1/voice-order/{id}/mark-fulfilled` | POST | Mark order as fulfilled | Admin |
+| `/api/v1/voice-order/{id}/assign-agent` | POST | Assign agent to order | Admin |
+| `/api/v1/voice-order/stats` | GET | Get voice order statistics | Admin |
+| `/api/v1/voice-order/user/{id}` | GET | Get user's voice orders | Admin/Self |
 
-**Note:** *Authentication temporarily disabled for testing purposes
+## Modern Chat Interface Implementation
 
-### Text Chat Endpoints
+### Page Layout
 
-| Endpoint | Method | Description | Authentication |
-|----------|--------|-------------|----------------|
-| `/api/v1/ai-chat` | POST | Process text-based food orders | Optional |
-| `/api/v1/ai-chat/context` | POST | Update conversation context | Required |
+```tsx
+// pages/voice-order.tsx
+import { useState } from 'react';
+import { ChatInterface } from '@/components/VoiceOrder/ChatInterface';
+import { Header } from '@/components/Layout/Header';
+import { Footer } from '@/components/Layout/Footer';
 
-### Testing & Diagnostic Endpoints
-
-| Endpoint | Method | Description | Authentication |
-|----------|--------|-------------|----------------|
-| `/public/voice-test.html` | GET | Browser-based voice API testing interface | None |
-| `/public/voice-api-test.php?auth=testing` | GET/POST | Direct voice API testing (bypasses middleware) | Query param |
-| `/public/check-openai.php?auth=fixit` | GET | OpenAI API configuration check | Query param |
-| `/public/fix-credentials.php?auth=fixit` | GET | Google Cloud credentials fix | Query param |
-
-## Frontend Implementation (Next.js)
-
-### 1. Project Setup
-
-```bash
-npx create-next-app voice-order-frontend
-cd voice-order-frontend
-npm install axios react-use-clipboard react-icons
+export default function VoiceOrderPage() {
+  return (
+    <div className="flex flex-col min-h-screen bg-gray-50">
+      <Header title="Voice Order Assistant" />
+      
+      <main className="flex-grow container mx-auto px-4 py-8 max-w-4xl">
+        <ChatInterface />
+      </main>
+      
+      <Footer />
+    </div>
+  );
+}
 ```
 
-### 2. Environment Configuration
+### Chat Interface Component
 
-Create `.env.local` file:
-
-```
-NEXT_PUBLIC_API_URL=http://mapi.jumlajumla.com/api/v1
-```
-
-### 3. Hybrid Voice + Chat Component
-
-Create a `components/AIOrderAssistant.js` file:
-
-```jsx
+```tsx
+// components/VoiceOrder/ChatInterface.tsx
 import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/router';
+import { useSession } from 'next-auth/react';
+import { MessageBubble } from './MessageBubble';
+import { AudioRecorder } from './AudioRecorder';
+import { ProductRecommendations } from './ProductRecommendations';
+import { ConfidenceIndicator } from './ConfidenceIndicator';
+import { 
+  Mic, MicOff, Send, Loader2, RefreshCw, ShoppingCart
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import axios from 'axios';
-import { FaMicrophone, FaStop, FaShoppingCart, FaPaperPlane, FaTimes } from 'react-icons/fa';
-import styles from '../styles/AIOrderAssistant.module.css';
 
-export default function AIOrderAssistant({ user, token, onAddToCart, onProceedToCheckout }) {
-  // Input mode state
-  const [inputMode, setInputMode] = useState('text'); // 'text' or 'voice'
-  
-  // Voice recording states
-  const [isRecording, setIsRecording] = useState(false);
-  const [transcript, setTranscript] = useState('');
-  const [realtimeTranscript, setRealtimeTranscript] = useState('');
-  const mediaRecorderRef = useRef(null);
-  const audioChunksRef = useRef([]);
-  const streamRef = useRef(null);
-  const recognitionRef = useRef(null);
+type Message = {
+  id: string;
+  role: 'user' | 'assistant' | 'system' | 'error';
+  content: string;
+  timestamp: Date;
+  products?: any[];
+  confidenceScore?: number;
+};
 
-  // Chat states
-  const [messages, setMessages] = useState([
-    { 
-      role: 'assistant', 
-      content: 'Hello! What would you like to order today? You can speak or type your order.' 
+export function ChatInterface() {
+  const { data: session } = useSession();
+  const router = useRouter();
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: '1',
+      role: 'assistant',
+      content: 'Hi! What would you like to order today? You can speak or type your request.',
+      timestamp: new Date(),
     }
   ]);
   const [inputText, setInputText] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [currentTranscript, setCurrentTranscript] = useState('');
+  const [sessionId, setSessionId] = useState(() => Math.random().toString(36).substring(2, 15));
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   
-  // Shared states
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState(null);
-  const [conversationContext, setConversationContext] = useState({});
-  
-  // Initialize speech recognition
+  // Scroll to bottom of messages
   useEffect(() => {
-    if (typeof window !== 'undefined' && 
-        ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
-      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = true;
-      recognitionRef.current.interimResults = true;
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+  
+  const handleSendMessage = async (text: string) => {
+    if (!text.trim()) return;
+    
+    // Add user message
+    const userMessage: Message = {
+      id: Math.random().toString(36).substring(2, 15),
+      role: 'user',
+      content: text,
+      timestamp: new Date(),
+    };
+    
+    setMessages(prev => [...prev, userMessage]);
+    setInputText('');
+    setIsProcessing(true);
+    
+    try {
+      // Call text-based AI ordering API
+      const response = await axios.post('/api/v1/ai-chat', {
+        message: text,
+        session_id: sessionId,
+      }, {
+        headers: session?.user ? {
+          Authorization: `Bearer ${session.accessToken}`
+        } : undefined
+      });
       
-      recognitionRef.current.onresult = (event) => {
-        let interimTranscript = '';
+      if (response.data.success) {
+        // Add assistant response
+        const assistantMessage: Message = {
+          id: Math.random().toString(36).substring(2, 15),
+          role: 'assistant',
+          content: response.data.recommendation_text,
+          timestamp: new Date(),
+          products: response.data.recommendations,
+          confidenceScore: response.data.confidence_score,
+        };
         
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          if (event.results[i].isFinal) {
-            setRealtimeTranscript(prev => prev + event.results[i][0].transcript + ' ');
-          } else {
-            interimTranscript += event.results[i][0].transcript;
-          }
-        }
-        
-        const transcriptElement = document.getElementById('realtime-transcript');
-        if (transcriptElement) {
-          transcriptElement.innerText = realtimeTranscript + (interimTranscript ? `... ${interimTranscript}` : '');
-        }
+        setMessages(prev => [...prev, assistantMessage]);
+      } else {
+        throw new Error(response.data.message || 'Failed to process your request');
+      }
+    } catch (error) {
+      console.error('Error processing text request:', error);
+      
+      // Add error message
+      const errorMessage: Message = {
+        id: Math.random().toString(36).substring(2, 15),
+        role: 'error',
+        content: `Sorry, I couldn't process your request. ${error.message}`,
+        timestamp: new Date(),
       };
+      
+      setMessages(prev => [...prev, errorMessage]);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+  
+  const handleVoiceResult = (result: any) => {
+    if (result.transcription) {
+      // Add user message with transcription
+      const userMessage: Message = {
+        id: Math.random().toString(36).substring(2, 15),
+        role: 'user',
+        content: result.transcription,
+        timestamp: new Date(),
+      };
+      
+      // Add assistant response
+      const assistantMessage: Message = {
+        id: Math.random().toString(36).substring(2, 15),
+        role: 'assistant',
+        content: result.recommendation_text,
+        timestamp: new Date(),
+        products: result.recommendations,
+        confidenceScore: result.confidence_score,
+      };
+      
+      setMessages(prev => [...prev, userMessage, assistantMessage]);
+    } else if (result.error) {
+      // Add error message
+      const errorMessage: Message = {
+        id: Math.random().toString(36).substring(2, 15),
+        role: 'error',
+        content: `Sorry, I couldn't process your voice request. ${result.error}`,
+        timestamp: new Date(),
+      };
+      
+      setMessages(prev => [...prev, errorMessage]);
+    }
+  };
+  
+  const addToCart = async (productId: number, quantity: number = 1) => {
+    try {
+      // Call your existing cart API
+      const response = await axios.post('/api/cart/add', {
+        product_id: productId,
+        quantity: quantity
+      }, {
+        headers: session?.user ? {
+          Authorization: `Bearer ${session.accessToken}`
+        } : undefined
+      });
+      
+      if (response.data.success) {
+        // Show success message
+        const successMessage: Message = {
+          id: Math.random().toString(36).substring(2, 15),
+          role: 'system',
+          content: `Added ${quantity} item(s) to your cart!`,
+          timestamp: new Date(),
+        };
+        
+        setMessages(prev => [...prev, successMessage]);
+      }
+    } catch (error) {
+      console.error('Error adding to cart:', error);
+    }
+  };
+  
+  return (
+    <div className="rounded-lg border bg-card shadow-sm flex flex-col h-[80vh]">
+      {/* Message history */}
+      <div className="flex-grow overflow-y-auto p-4 space-y-4">
+        {messages.map(message => (
+          <MessageBubble
+            key={message.id}
+            message={message}
+            onAddToCart={addToCart}
+          />
+        ))}
+        
+        {/* Realtime transcript display */}
+        {isRecording && currentTranscript && (
+          <div className="bg-gray-100 rounded-lg p-3 italic text-gray-700">
+            Hearing: {currentTranscript}...
+          </div>
+        )}
+        
+        {/* Processing indicator */}
+        {isProcessing && (
+          <div className="flex items-center space-x-2 text-gray-500">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>Processing your request...</span>
+          </div>
+        )}
+        
+        <div ref={messagesEndRef} />
+      </div>
+      
+      {/* Input area */}
+      <div className="p-4 border-t">
+        {isRecording ? (
+          <div className="flex flex-col space-y-2">
+            <AudioRecorder 
+              isRecording={isRecording}
+              onTranscriptUpdate={setCurrentTranscript}
+              onResult={handleVoiceResult}
+              onStop={() => setIsRecording(false)}
+              sessionId={sessionId}
+            />
+            <Button 
+              variant="destructive" 
+              onClick={() => setIsRecording(false)}
+              className="w-full"
+            >
+              <MicOff className="h-4 w-4 mr-2" /> Stop Recording
+            </Button>
+          </div>
+        ) : (
+          <div className="flex space-x-2">
+            <Textarea
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              placeholder="Type your order here..."
+              className="flex-grow"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendMessage(inputText);
+                }
+              }}
+            />
+            <div className="flex flex-col space-y-2">
+              <Button 
+                onClick={() => handleSendMessage(inputText)}
+                disabled={!inputText.trim() || isProcessing}
+              >
+                <Send className="h-4 w-4" />
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => setIsRecording(true)}
+              >
+                <Mic className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+```
+
+### Product Recommendations Component
+
+```tsx
+// components/VoiceOrder/ProductRecommendations.tsx
+import Image from 'next/image';
+import { Button } from '@/components/ui/button';
+import { PlusCircle, ShoppingCart } from 'lucide-react';
+import { ConfidenceIndicator } from './ConfidenceIndicator';
+
+type ProductRecommendationsProps = {
+  products: any[];
+  onAddToCart: (productId: number, quantity?: number) => void;
+  confidenceScore?: number;
+};
+
+export function ProductRecommendations({ 
+  products, 
+  onAddToCart,
+  confidenceScore 
+}: ProductRecommendationsProps) {
+  if (!products || products.length === 0) return null;
+  
+  return (
+    <div className="mt-2 space-y-4">
+      {confidenceScore !== undefined && (
+        <ConfidenceIndicator score={confidenceScore} />
+      )}
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {products.slice(0, 4).map(product => (
+          <div 
+            key={product.id}
+            className="flex rounded-lg border overflow-hidden shadow-sm hover:shadow-md transition-shadow"
+          >
+            {product.image_url && (
+              <div className="w-24 h-24 relative">
+                <Image
+                  src={product.image_url}
+                  alt={product.translation?.title || product.title}
+                  fill
+                  sizes="96px"
+                  className="object-cover"
+                />
+              </div>
+            )}
+            
+            <div className="flex-grow p-3 flex flex-col justify-between">
+              <div>
+                <h4 className="font-medium">
+                  {product.translation?.title || product.title}
+                </h4>
+                <p className="text-sm text-gray-500 line-clamp-1">
+                  {product.translation?.description || product.description}
+                </p>
+                <p className="font-bold mt-1">
+                  ${product.price?.toFixed(2) || '0.00'}
+                </p>
+              </div>
+              
+              <Button 
+                size="sm" 
+                onClick={() => onAddToCart(product.id)}
+                className="mt-2 self-end"
+              >
+                <PlusCircle className="h-4 w-4 mr-1" /> Add
+              </Button>
+            </div>
+          </div>
+        ))}
+      </div>
+      
+      {products.length > 4 && (
+        <p className="text-sm text-gray-500">
+          + {products.length - 4} more recommendations
+        </p>
+      )}
+    </div>
+  );
+}
+```
+
+### Audio Recorder Component
+
+```tsx
+// components/VoiceOrder/AudioRecorder.tsx
+import { useState, useRef, useEffect } from 'react';
+import axios from 'axios';
+import { useSession } from 'next-auth/react';
+import { Loader2 } from 'lucide-react';
+
+type AudioRecorderProps = {
+  isRecording: boolean;
+  onTranscriptUpdate: (transcript: string) => void;
+  onResult: (result: any) => void;
+  onStop: () => void;
+  sessionId: string;
+};
+
+export function AudioRecorder({
+  isRecording,
+  onTranscriptUpdate,
+  onResult,
+  onStop,
+  sessionId
+}: AudioRecorderProps) {
+  const { data: session } = useSession();
+  const [error, setError] = useState<string | null>(null);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
+  
+  // Set up audio recording
+  useEffect(() => {
+    if (isRecording) {
+      startRecording();
+    } else if (mediaRecorderRef.current) {
+      stopRecording();
     }
     
     return () => {
-      if (recognitionRef.current) {
-        try {
-          recognitionRef.current.stop();
-        } catch (e) {
-          // Ignore errors when stopping
-        }
-      }
+      cleanupAudio();
     };
-  }, []);
+  }, [isRecording]);
   
-  // Voice recording functions
+  // Set up audio visualization
+  useEffect(() => {
+    if (streamRef.current && isRecording) {
+      visualizeAudio();
+    }
+  }, [streamRef.current, isRecording]);
+  
   const startRecording = async () => {
     try {
       setError(null);
-      setRealtimeTranscript('');
       
-      // Get user media
-      streamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Get microphone access
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
       
-      // Set up MediaRecorder
-      mediaRecorderRef.current = new MediaRecorder(streamRef.current);
+      // Set up audio context for visualization
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      audioContextRef.current = audioContext;
+      
+      const analyser = audioContext.createAnalyser();
+      analyserRef.current = analyser;
+      analyser.fftSize = 256;
+      
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+      
+      // Set up media recorder
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
       
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
       };
       
-      mediaRecorderRef.current.onstop = () => {
-        processVoiceRecording();
+      mediaRecorder.onstop = async () => {
+        await processAudio();
       };
       
       // Start recording
-      mediaRecorderRef.current.start();
-      setIsRecording(true);
+      mediaRecorder.start(200); // Collect data every 200ms
       
-      // Start speech recognition for real-time feedback
-      if (recognitionRef.current) {
-        recognitionRef.current.start();
-      }
+      // Set up speech recognition for real-time feedback
+      setupSpeechRecognition();
       
-      // Update input mode
-      setInputMode('voice');
     } catch (err) {
-      console.error('Error starting recording:', err);
-      setError(`Could not start recording: ${err.message}`);
+      console.error('Failed to start recording:', err);
+      setError('Could not access microphone. Please ensure you have given permission.');
+      onStop();
     }
   };
   
   const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      
-      // Stop all tracks
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
+    }
+    cleanupAudio();
+  };
+  
+  const cleanupAudio = () => {
+    // Stop all tracks
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    
+    // Clean up audio context
+    if (audioContextRef.current) {
+      if (audioContextRef.current.state !== 'closed') {
+        audioContextRef.current.close();
       }
-      
-      // Stop speech recognition
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
+      audioContextRef.current = null;
+      analyserRef.current = null;
     }
   };
   
-  const processVoiceRecording = async () => {
-    try {
-      setLoading(true);
+  const visualizeAudio = () => {
+    if (!analyserRef.current || !isRecording) return;
+    
+    const analyser = analyserRef.current;
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    
+    const updateLevels = () => {
+      if (!analyserRef.current || !isRecording) return;
       
+      analyser.getByteFrequencyData(dataArray);
+      
+      // Calculate average volume
+      let sum = 0;
+      for (let i = 0; i < bufferLength; i++) {
+        sum += dataArray[i];
+      }
+      const average = sum / bufferLength;
+      const level = Math.min(100, Math.max(0, average / 256 * 100));
+      setAudioLevel(level);
+      
+      // Continue animation
+      requestAnimationFrame(updateLevels);
+    };
+    
+    updateLevels();
+  };
+  
+  const setupSpeechRecognition = () => {
+    if (!('webkitSpeechRecognition' in window)) return;
+    
+    const SpeechRecognition = (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+    
+    recognition.onresult = (event: any) => {
+      let interimTranscript = '';
+      let finalTranscript = '';
+      
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+      
+      onTranscriptUpdate(finalTranscript + interimTranscript);
+    };
+    
+    recognition.start();
+  };
+  
+  const processAudio = async () => {
+    try {
+      // Create audio blob
       const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+      if (audioBlob.size < 1000) {
+        throw new Error('Recording too short');
+      }
+      
+      // Create form data
       const formData = new FormData();
       formData.append('audio', audioBlob, 'recording.webm');
-      formData.append('language', 'en-US');
+      formData.append('session_id', sessionId);
       
-      // If we have conversation context, add it to the request
-      if (Object.keys(conversationContext).length > 0) {
-        formData.append('context', JSON.stringify(conversationContext));
-      }
-      
-      const headers = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-      
-      const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_URL}/voice-order`,
-        formData,
-        { headers }
-      );
-      
-      handleAIResponse(response.data, realtimeTranscript);
-    } catch (err) {
-      console.error('Error processing recording:', err);
-      setError(`Error processing your order: ${err.message}`);
-      
-      setMessages(prev => [
-        ...prev,
-        { role: 'user', content: realtimeTranscript || 'Voice recording' },
-        { role: 'assistant', content: `Sorry, I couldn't process your request. ${err.message}` }
-      ]);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  // Text chat functions
-  const handleTextSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!inputText.trim()) return;
-    
-    const userMessage = inputText.trim();
-    setInputText('');
-    
-    // Add user message to chat
-    setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
-    
-    try {
-      setLoading(true);
-      
-      const requestData = {
-        message: userMessage,
-        context: conversationContext
-      };
-      
-      const headers = {};
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-        headers['Content-Type'] = 'application/json';
-      }
-      
-      const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_URL}/ai-chat`,
-        requestData,
-        { headers }
-      );
-      
-      handleAIResponse(response.data, userMessage);
-    } catch (err) {
-      console.error('Error processing text message:', err);
-      setError(`Error processing your request: ${err.message}`);
-      
-      setMessages(prev => [
-        ...prev,
-        { role: 'assistant', content: `Sorry, I couldn't process your request. ${err.message}` }
-      ]);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  // Shared response handling
-  const handleAIResponse = (data, userInput) => {
-    // Store the result for product display
-    setResult(data);
-    
-    // Update conversation context
-    if (data.context) {
-      setConversationContext(data.context);
-    }
-    
-    // Add AI response to chat
-    setMessages(prev => [
-      ...prev,
-      { role: 'user', content: userInput },
-      { role: 'assistant', content: data.recommendation_text || 'I found some products that might interest you.' }
-    ]);
-  };
-  
-  // Function to add product to cart (integrates with existing cart system)
-  const addToCart = async (productId) => {
-    try {
-      if (onAddToCart && typeof onAddToCart === 'function') {
-        // Use the parent component's handler if provided
-        await onAddToCart(productId, 1);
-        return;
-      }
-      
-      // Default implementation
-      if (!token) {
-        setError('Please login to add items to your cart');
-        return;
-      }
-      
-      const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_URL}/rest/cart/insert-product`,
-        { product_id: productId, quantity: 1 },
-        { 
-          headers: { 
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json' 
-          } 
+      // Send to API
+      const response = await axios.post('/api/v1/voice-order', formData, {
+        headers: session?.user ? {
+          Authorization: `Bearer ${session.accessToken}`,
+          'Content-Type': 'multipart/form-data',
+        } : {
+          'Content-Type': 'multipart/form-data',
         }
-      );
+      });
       
-      if (response.data.success) {
-        // Add a confirmation message in the chat
-        setMessages(prev => [
-          ...prev,
-          { role: 'assistant', content: `Added to your cart!` }
-        ]);
-      } else {
-        setError(`Failed to add to cart: ${response.data.message}`);
-      }
+      // Handle response
+      onResult(response.data);
+      
     } catch (err) {
-      console.error('Error adding to cart:', err);
-      setError(`Error adding to cart: ${err.message}`);
+      console.error('Error processing audio:', err);
+      onResult({ error: err.message || 'Failed to process audio' });
+    } finally {
+      onStop();
     }
   };
   
-  // Function to proceed to checkout (integrates with existing checkout)
-  const proceedToCheckout = () => {
-    if (onProceedToCheckout && typeof onProceedToCheckout === 'function') {
-      onProceedToCheckout();
-    }
-  };
-  
-  // UI rendering
-  return (
-    <div className={styles.aiAssistantContainer}>
-      {/* Chat Messages */}
-      <div className={styles.messagesContainer}>
-        {messages.map((message, index) => (
-          <div 
-            key={index} 
-            className={`${styles.message} ${message.role === 'user' ? styles.userMessage : styles.assistantMessage}`}
-          >
-            {message.content}
-          </div>
-        ))}
-        
-        {loading && (
-          <div className={styles.typingIndicator}>
-            <div className={styles.dot}></div>
-            <div className={styles.dot}></div>
-            <div className={styles.dot}></div>
-          </div>
-        )}
-      </div>
-      
-      {/* Input Controls */}
-      <div className={styles.controlsSection}>
-        {isRecording ? (
-          // Recording active UI
-          <div className={styles.recordingActive}>
-            <div className={styles.recordingIndicator}>
-              <div className={styles.pulse}></div>
-              Recording...
-            </div>
-            
-            <div className={styles.realtimeTranscript} id="realtime-transcript">
-              {realtimeTranscript}
-            </div>
-            
-            <button 
-              className={styles.stopButton}
-              onClick={stopRecording}
-            >
-              <FaStop /> Stop Recording
-            </button>
-          </div>
-        ) : (
-          // Input selection UI
-          <div className={styles.inputControls}>
-            {inputMode === 'text' ? (
-              <form onSubmit={handleTextSubmit} className={styles.textInputForm}>
-                <input
-                  type="text"
-                  value={inputText}
-                  onChange={(e) => setInputText(e.target.value)}
-                  placeholder="Type your order..."
-                  className={styles.textInput}
-                  disabled={loading}
-                />
-                <button 
-                  type="submit" 
-                  className={styles.sendButton}
-                  disabled={loading || !inputText.trim()}
-                >
-                  <FaPaperPlane />
-                </button>
-                <button
-                  type="button"
-                  onClick={startRecording}
-                  className={styles.voiceInputButton}
-                  disabled={loading}
-                >
-                  <FaMicrophone />
-                </button>
-              </form>
-            ) : (
-              <div className={styles.voiceInputForm}>
-                <button
-                  onClick={startRecording}
-                  className={styles.recordButton}
-                  disabled={loading}
-                >
-                  <FaMicrophone /> Start Recording
-                </button>
-                <button
-                  onClick={() => setInputMode('text')}
-                  className={styles.switchToTextButton}
-                  disabled={loading}
-                >
-                  <FaTimes /> Switch to Text
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-      
-      {/* Error Display */}
-      {error && (
-        <div className={styles.errorMessage}>
-          {error}
-          <button 
-            onClick={() => setError(null)} 
-            className={styles.dismissButton}
-          >
-            <FaTimes />
-          </button>
-        </div>
-      )}
-      
-      {/* Product Recommendations */}
-      {result && result.recommendations && result.recommendations.length > 0 && (
-        <div className={styles.recommendationsSection}>
-          <h3>Recommended Products</h3>
-          <div className={styles.productsGrid}>
-            {result.recommendations.map(product => (
-              <div key={product.id} className={styles.productCard}>
-                <img 
-                  src={product.img ? `/storage/${product.img}` : '/placeholder-food.jpg'} 
-                  alt={product.translation?.title || product.title}
-                  className={styles.productImage}
-                />
-                <div className={styles.productInfo}>
-                  <h4>{product.translation?.title || product.title}</h4>
-                  <p className={styles.productPrice}>
-                    ${parseFloat(product.stocks?.[0]?.price || product.price).toFixed(2)}
-                  </p>
-                  <p className={styles.productDescription}>
-                    {product.translation?.description || product.description || ''}
-                  </p>
-                  <button 
-                    className={styles.addToCartButton}
-                    onClick={() => addToCart(product.id)}
-                  >
-                    <FaShoppingCart /> Add to Cart
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-          
-          {/* Checkout Button (only show if products have been recommended) */}
-          <div className={styles.checkoutButtonContainer}>
-            <button 
-              className={styles.proceedToCheckoutButton}
-              onClick={proceedToCheckout}
-            >
-              Proceed to Checkout
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-```
-
-### 4. Styling
-
-Create `styles/AIOrderAssistant.module.css`:
-
-```css
-.aiAssistantContainer {
-  display: flex;
-  flex-direction: column;
-  max-width: 1000px;
-  margin: 0 auto;
-  height: 100%;
-  min-height: 500px;
-  background-color: #fff;
-  border-radius: 10px;
-  overflow: hidden;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-}
-
-/* Messages Container */
-.messagesContainer {
-  flex: 1;
-  overflow-y: auto;
-  padding: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  background-color: #f9f9f9;
-}
-
-.message {
-  padding: 12px 16px;
-  border-radius: 10px;
-  max-width: 80%;
-  word-break: break-word;
-}
-
-.userMessage {
-  align-self: flex-end;
-  background-color: #2196F3;
-  color: white;
-  border-bottom-right-radius: 2px;
-}
-
-.assistantMessage {
-  align-self: flex-start;
-  background-color: #e9e9e9;
-  color: #333;
-  border-bottom-left-radius: 2px;
-}
-
-.typingIndicator {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  padding: 12px 16px;
-  border-radius: 10px;
-  background-color: #e9e9e9;
-  width: fit-content;
-  align-self: flex-start;
-}
-
-.dot {
-  width: 8px;
-  height: 8px;
-  background-color: #666;
-  border-radius: 50%;
-  animation: bounce 1.5s infinite;
-}
-
-.dot:nth-child(2) {
-  animation-delay: 0.2s;
-}
-
-.dot:nth-child(3) {
-  animation-delay: 0.4s;
-}
-
-@keyframes bounce {
-  0%, 60%, 100% {
-    transform: translateY(0);
-  }
-  30% {
-    transform: translateY(-5px);
-  }
-}
-
-/* Controls Section */
-.controlsSection {
-  padding: 15px;
-  border-top: 1px solid #e0e0e0;
-  background-color: #fff;
-}
-
-.inputControls {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.textInputForm {
-  display: flex;
-  gap: 8px;
-}
-
-.textInput {
-  flex: 1;
-  padding: 12px 16px;
-  border: 1px solid #e0e0e0;
-  border-radius: 24px;
-  font-size: 16px;
-  outline: none;
-}
-
-.textInput:focus {
-  border-color: #2196F3;
-}
-
-.sendButton, .voiceInputButton {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  cursor: pointer;
-}
-
-.sendButton {
-  background-color: #2196F3;
-  color: white;
-}
-
-.voiceInputButton {
-  background-color: #4CAF50;
-  color: white;
-}
-
-.sendButton:hover, .voiceInputButton:hover {
-  opacity: 0.9;
-}
-
-.sendButton:disabled, .voiceInputButton:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.voiceInputForm {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-}
-
-.recordButton, .stopButton, .switchToTextButton {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 12px 24px;
-  border: none;
-  border-radius: 24px;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.recordButton, .stopButton {
-  background-color: #4CAF50;
-  color: white;
-}
-
-.stopButton {
-  background-color: #f44336;
-}
-
-.switchToTextButton {
-  background-color: #e0e0e0;
-  color: #333;
-}
-
-.recordingActive {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 15px;
-}
-
-.recordingIndicator {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  color: #f44336;
-  font-weight: 500;
-}
-
-.pulse {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background-color: #f44336;
-  animation: pulse 1.5s infinite;
-}
-
-@keyframes pulse {
-  0% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(244, 67, 54, 0.7);
-  }
-  
-  70% {
-    transform: scale(1);
-    box-shadow: 0 0 0 10px rgba(244, 67, 54, 0);
-  }
-  
-  100% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(244, 67, 54, 0);
-  }
-}
-
-.realtimeTranscript {
-  background-color: #f5f5f5;
-  border-left: 4px solid #2196F3;
-  padding: 15px;
-  margin-top: 15px;
-  border-radius: 4px;
-  text-align: left;
-  min-height: 50px;
-  width: 100%;
-  color: #333;
-}
-
-/* Error Message */
-.errorMessage {
-  background-color: #ffebee;
-  color: #c62828;
-  padding: 15px;
-  margin: 10px 15px;
-  border-radius: 4px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.dismissButton {
-  background: none;
-  border: none;
-  color: #c62828;
-  cursor: pointer;
-  font-size: 18px;
-  display: flex;
-  align-items: center;
-}
-
-/* Recommendations Section */
-.recommendationsSection {
-  padding: 20px;
-  border-top: 1px solid #e0e0e0;
-}
-
-.recommendationsSection h3 {
-  margin-top: 0;
-  margin-bottom: 15px;
-  font-size: 18px;
-  color: #333;
-}
-
-.productsGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 15px;
-}
-
-.productCard {
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
-  overflow: hidden;
-  transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.productCard:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 8px 16px rgba(0,0,0,0.1);
-}
-
-.productImage {
-  width: 100%;
-  height: 140px;
-  object-fit: cover;
-}
-
-.productInfo {
-  padding: 12px;
-}
-
-.productInfo h4 {
-  margin-top: 0;
-  margin-bottom: 8px;
-  font-size: 16px;
-  color: #333;
-}
-
-.productPrice {
-  font-weight: 600;
-  color: #4CAF50;
-  margin-bottom: 8px;
-}
-
-.productDescription {
-  font-size: 14px;
-  color: #666;
-  margin-bottom: 12px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.addToCartButton {
-  width: 100%;
-  padding: 8px;
-  background-color: #2196F3;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  font-size: 14px;
-}
-
-.addToCartButton:hover {
-  background-color: #1976D2;
-}
-
-.checkoutButtonContainer {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 20px;
-}
-
-.proceedToCheckoutButton {
-  padding: 12px 24px;
-  background-color: #4CAF50;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-weight: 600;
-  cursor: pointer;
-  font-size: 16px;
-}
-
-.proceedToCheckoutButton:hover {
-  background-color: #388E3C;
-}
-
-/* Responsive Design */
-@media (max-width: 768px) {
-  .productsGrid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  }
-  
-  .message {
-    max-width: 90%;
-  }
-}
-
-@media (max-width: 480px) {
-  .productsGrid {
-    grid-template-columns: 1fr;
-  }
-  
-  .voiceInputForm {
-    flex-direction: column;
-  }
-}
-```
-
-### 5. Integration with Existing Checkout
-
-Create `pages/VoiceOrderPage.js` that integrates with your existing cart and checkout system:
-
-```jsx
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/router';
-import Head from 'next/head';
-import AIOrderAssistant from '../components/AIOrderAssistant';
-import { useAuth } from '../context/AuthContext'; // Your existing auth context
-import { useCart } from '../context/CartContext'; // Your existing cart context
-import styles from '../styles/VoiceOrderPage.module.css';
-
-export default function VoiceOrderPage() {
-  const router = useRouter();
-  const { user, token, isAuthenticated } = useAuth(); // Your existing auth hook
-  const { addToCart, cartItems, cartTotal } = useCart(); // Your existing cart hook
-  
-  const handleAddToCart = async (productId, quantity = 1) => {
-    // Use your existing addToCart function
-    await addToCart(productId, quantity);
-  };
-  
-  const handleProceedToCheckout = () => {
-    // Navigate to your existing checkout page
-    router.push('/checkout');
-  };
-  
-  return (
-    <div className={styles.container}>
-      <Head>
-        <title>Voice Food Ordering</title>
-        <meta name="description" content="Order food with your voice or text" />
-        <link rel="icon" href="/favicon.ico" />
-      </Head>
-      
-      <main className={styles.main}>
-        <div className={styles.header}>
-          <h1 className={styles.title}>Voice & Chat Food Ordering</h1>
-          
-          {/* Cart Summary - Reusing your existing cart component */}
-          {cartItems.length > 0 && (
-            <div className={styles.cartSummary}>
-              <span>{cartItems.length} items</span>
-              <span>${cartTotal.toFixed(2)}</span>
-              <button 
-                onClick={() => router.push('/checkout')}
-                className={styles.viewCartButton}
-              >
-                View Cart
-              </button>
-            </div>
-          )}
-        </div>
-        
-        {/* Main Content with AI Assistant */}
-        <div className={styles.contentContainer}>
-          {isAuthenticated ? (
-            <AIOrderAssistant 
-              user={user}
-              token={token}
-              onAddToCart={handleAddToCart}
-              onProceedToCheckout={handleProceedToCheckout}
-            />
-          ) : (
-            <div className={styles.loginPrompt}>
-              <p>Please login to use the voice and chat ordering system</p>
-              <button 
-                onClick={() => router.push('/login?redirect=/voice-order')}
-                className={styles.loginButton}
-              >
-                Login
-              </button>
-            </div>
-          )}
-        </div>
-      </main>
-    </div>
-  );
-}
-```
-
-### 6. Backend Requirements
-
-To support the chat interface, add the following controller methods to your Laravel backend:
-
-```php
-// app/Http/Controllers/AIChatController.php
-
-public function processTextOrder(Request $request)
-{
-    $request->validate([
-        'message' => 'required|string',
-        'context' => 'nullable|array',
-    ]);
+  // Render audio wave visualization
+  const waveElements = Array.from({ length: 10 }).map((_, i) => {
+    const height = Math.max(4, (audioLevel / 100) * 32);
+    const randomFactor = Math.sin(Date.now() / 200 + i) * 0.5 + 0.5;
+    const barHeight = Math.max(4, height * randomFactor);
     
-    // Get the authenticated user if available
-    $user = Auth::user();
-    
-    // Process text message using the same AIOrderService
-    $aiService = new AIOrderService();
-    $orderData = $aiService->processOrderIntent($request->message, $user);
-    
-    // Generate recommendations based on intent
-    $recommendedProducts = $this->getRecommendedProducts($orderData);
-    
-    // Generate recommendation text
-    $recommendationText = $aiService->generateRecommendation($orderData);
-    
-    // Build and return response
-    return response()->json([
-        'success' => true,
-        'intent_data' => $orderData,
-        'recommendation_text' => $recommendationText,
-        'recommendations' => $recommendedProducts,
-        'context' => [
-            'last_intent' => $orderData['intent'] ?? null,
-            'filters' => $orderData['filters'] ?? [],
-            // Include other relevant context for conversation continuity
-        ],
-    ]);
-}
-```
-
-## Integration with Existing Product APIs
-
-To ensure consistent product display, modify the recommendation component to use your existing product API endpoints:
-
-```jsx
-// Add this to the AIOrderAssistant component
-
-// Load products from your existing API when intent is determined
-useEffect(() => {
-  if (result?.intent_data?.intent) {
-    loadProductsByIntent(result.intent_data.intent);
-  }
-}, [result]);
-
-const loadProductsByIntent = async (intent) => {
-  try {
-    // Use your existing product search API
-    const response = await axios.get(
-      `${process.env.NEXT_PUBLIC_API_URL}/rest/products/search?q=${intent}`,
-      { headers: token ? { 'Authorization': `Bearer ${token}` } : {} }
+    return (
+      <div 
+        key={i}
+        className="bg-primary w-1 mx-px rounded-full"
+        style={{ height: `${barHeight}px` }}
+      />
     );
-    
-    // Update recommendations with consistent product data
-    if (response.data.data) {
-      setResult(prev => ({
-        ...prev,
-        recommendations: response.data.data
-      }));
-    }
-  } catch (err) {
-    console.error('Error loading products:', err);
-  }
-};
+  });
+  
+  return (
+    <div className="bg-gray-50 p-4 rounded-lg">
+      <div className="flex justify-center items-center space-x-4">
+        <div className="relative">
+          <div className="h-12 w-12 rounded-full bg-red-100 animate-pulse flex items-center justify-center">
+            <div className="h-6 w-6 rounded-full bg-red-500" />
+          </div>
+          <div className="absolute -bottom-1 -right-1">
+            <div className="h-4 w-4 rounded-full bg-red-500 animate-ping" />
+          </div>
+        </div>
+        
+        <div className="text-sm">
+          <div className="font-medium">Recording your voice...</div>
+          <div className="text-gray-500">Speak clearly to place your order</div>
+        </div>
+      </div>
+      
+      <div className="mt-4 h-8 flex items-center justify-center space-x-1">
+        {waveElements}
+      </div>
+      
+      {error && (
+        <div className="mt-2 text-sm text-red-500">{error}</div>
+      )}
+    </div>
+  );
+}
 ```
 
-## Mobile Optimization
+## Installation and Setup
 
-Ensure the hybrid interface works well on mobile:
+1. **Install required dependencies**:
 
-1. Add media queries for different screen sizes
-2. Use responsive flexbox/grid layouts
-3. Implement touch-friendly controls (larger hit areas)
-4. Handle iOS audio permission requirements
+```bash
+npm install next react react-dom axios @tanstack/react-query lucide-react date-fns
+npm install tailwindcss postcss autoprefixer
+npm install @radix-ui/react-icons
+npx tailwindcss init -p
+```
 
-## Deployment and Integration Steps
+2. **Configure TailwindCSS**:
 
-1. Add the new components to your existing application
-2. Update your navigation menu to include the voice/chat ordering option
-3. Ensure your cart and checkout systems recognize products added via voice/chat
-4. Add analytics to track usage patterns between traditional vs. voice/chat ordering
+```js
+// tailwind.config.js
+module.exports = {
+  content: [
+    './pages/**/*.{js,ts,jsx,tsx}',
+    './components/**/*.{js,ts,jsx,tsx}',
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}
+```
 
-## Testing Checklist
+3. **Create API client**:
 
-In addition to the standard testing:
+```js
+// lib/api.js
+import axios from 'axios';
 
-1. ✅ Test switching between voice and text input
-2. ✅ Verify conversation flow and context retention
-3. ✅ Confirm products added through voice/chat appear in the main cart
-4. ✅ Ensure checkout flow works with voice/chat initiated orders
-5. ✅ Test on various devices and screen sizes
+const api = axios.create({
+  baseURL: process.env.NEXT_PUBLIC_API_URL,
+  timeout: 30000,
+});
 
-This enhanced approach gives you the best of both worlds - the flexibility of voice and text input combined with the reliability of your existing product catalog and checkout system. 
+export default api;
+```
+
+## Deployment Checklist
+
+- [ ] Configure environment variables in production
+- [ ] Ensure proper CORS settings on backend
+- [ ] Test with various browsers and devices
+- [ ] Implement error tracking and monitoring
+- [ ] Create fallback mechanisms for unsupported browsers
+
+## Security Considerations
+
+- Always transmit audio using HTTPS
+- Implement rate limiting on all voice endpoints
+- Consider implementing audio encryption for privacy
+- Store user voice preferences securely
+- Implement proper permission checks on all API endpoints
+
+## Performance Optimization
+
+- Use WebWorkers for audio processing when possible
+- Implement lazy loading for components not in view
+- Use efficient state management to prevent re-renders
+- Optimize API responses for minimal payload size
+- Implement proper caching strategies 
