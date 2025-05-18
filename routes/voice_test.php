@@ -89,3 +89,137 @@ Route::post('/api/voice-test-api', function() {
         ], 500);
     }
 });
+
+/**
+ * Text Search API Endpoint
+ * 
+ * Allows searching for products based on text input
+ * Used by: public/voice-test/index.html
+ */
+Route::post('/api/search/text', function() {
+    try {
+        $request = request();
+        $query = $request->input('query');
+        $sessionId = $request->input('session_id', 'web-'.time());
+        
+        if (empty($query)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No search query provided'
+            ], 400);
+        }
+        
+        // Process text input with the AIOrderService
+        $aiOrderService = app(\App\Services\AIOrderService::class);
+        $foodIntelligenceService = app(\App\Services\FoodIntelligenceService::class);
+        
+        // Process the search query as an order intent
+        $orderData = $aiOrderService->processOrderIntent($query, null);
+        
+        // Get product recommendations based on the intent
+        $recommendations = $foodIntelligenceService->filterProducts($orderData, null);
+        
+        // Apply confidence-based filtering if helper exists
+        if (class_exists('\\App\\Helpers\\VoiceConfidenceHelper')) {
+            $recommendations = \App\Helpers\VoiceConfidenceHelper::filterRecommendationsByConfidence(
+                $recommendations, 
+                1.0  // For text search, we use max confidence since user typed it
+            );
+        }
+        
+        // Generate recommendation text
+        $recommendationText = $aiOrderService->generateRecommendation($orderData);
+        
+        return response()->json([
+            'success' => true,
+            'query' => $query,
+            'session_id' => $sessionId,
+            'recommendations' => $recommendations,
+            'recommendation_text' => $recommendationText,
+            'confidence_score' => 1.0, // High confidence since user typed this directly
+            'intent_data' => $orderData
+        ]);
+        
+    } catch (\Exception $e) {
+        \Log::error('Error in text search API', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'Error processing text search: ' . $e->getMessage()
+        ], 500);
+    }
+});
+
+/**
+ * Category Search API Endpoint
+ * 
+ * Allows searching for products by category
+ * Used by: public/voice-test/index.html
+ */
+Route::post('/api/search/category', function() {
+    try {
+        $request = request();
+        $category = $request->input('category');
+        $sessionId = $request->input('session_id', 'web-'.time());
+        
+        if (empty($category)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'No category provided'
+            ], 400);
+        }
+        
+        // Map common category names to our system categories
+        $categoryMapping = [
+            'burger' => 'burgers',
+            'pizza' => 'pizza',
+            'vegetarian' => 'vegetarian',
+            'chicken' => 'chicken',
+            'dessert' => 'desserts',
+            'drinks' => 'beverages'
+        ];
+        
+        $mappedCategory = $categoryMapping[$category] ?? $category;
+        
+        // Create a simple intent that just has the category
+        $orderIntent = [
+            'intent' => 'browse',
+            'filters' => [$mappedCategory],
+            'exclusions' => [],
+            'cuisine_type' => null,
+            'product_types' => [$mappedCategory],
+            'dietary_preferences' => [],
+            'keywords' => [$mappedCategory]
+        ];
+        
+        // Get products for this category
+        $foodIntelligenceService = app(\App\Services\FoodIntelligenceService::class);
+        $recommendations = $foodIntelligenceService->filterProducts($orderIntent, null);
+        
+        // No need to apply confidence filtering for category searches as confidence is high
+        
+        return response()->json([
+            'success' => true,
+            'category' => $category,
+            'session_id' => $sessionId,
+            'recommendations' => $recommendations,
+            'recommendation_text' => "Here are some " . ucfirst($mappedCategory) . " options for you.",
+            'confidence_score' => 1.0, // High confidence since user selected a specific category
+            'intent_data' => $orderIntent
+        ]);
+        
+    } catch (\Exception $e) {
+        \Log::error('Error in category search API', [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'Error processing category search: ' . $e->getMessage()
+        ], 500);
+    }
+});

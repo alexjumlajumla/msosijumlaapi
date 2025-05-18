@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Storage;
 use App\Models\VoiceOrder;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 
 class VoiceOrderController extends Controller
 {

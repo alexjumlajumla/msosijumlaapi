@@ -177,6 +177,104 @@
             font-size: 0.8rem;
             font-weight: 500;
         }
+        
+        /* Recording tips */
+        .recording-tips {
+            background: #fff8e1;
+            border-left: 4px solid #ffc107;
+            padding: 0.8rem;
+            margin: 0.8rem auto;
+            max-width: 600px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+        }
+        
+        .recording-tips ul {
+            margin-bottom: 0;
+        }
+        
+        .confidence-indicator {
+            display: flex;
+            align-items: center;
+            margin-top: 0.5rem;
+            font-size: 0.8rem;
+        }
+        
+        .confidence-bar {
+            flex-grow: 1;
+            height: 8px;
+            background: #e9ecef;
+            border-radius: 4px;
+            margin: 0 8px;
+            overflow: hidden;
+        }
+        
+        .confidence-level {
+            height: 100%;
+            background: #4CAF50;
+        }
+        
+        .confidence-level.low {
+            background: #ff6b6b;
+        }
+        
+        .confidence-level.medium {
+            background: #ffc107;
+        }
+
+        .fallback-options {
+            margin-top: 1rem;
+            padding: 1rem;
+            border-radius: 8px;
+            background: #e9ecef;
+            font-size: 0.95rem;
+        }
+
+        .category-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .category-btn {
+            background: #ffffff;
+            border: 1px solid #dee2e6;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        .category-btn:hover {
+            background: #f0f0f0;
+        }
+
+        .text-input-container {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .text-input-container input {
+            flex-grow: 1;
+            padding: 0.5rem;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+        }
+
+        .text-input-container button {
+            padding: 0.5rem 1rem;
+            border: none;
+            background: #007bff;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        .text-input-container button:hover {
+            background: #0056b3;
+        }
     </style>
 </head>
 <body>
@@ -184,6 +282,16 @@
 <header>
     <h1>🎙️ Msosi Voice Assistant</h1>
     <p>Say your order — "I'd like a veggie burger with fries"</p>
+    <div class="recording-tips hidden" id="recordingTips">
+        <p><strong>Tips for better results:</strong></p>
+        <ul style="text-align: left; display: inline-block; margin: 0 auto; padding-left: 20px;">
+            <li>Speak clearly and at a normal pace</li>
+            <li>Reduce background noise</li>
+            <li>Hold phone/mic closer to your mouth</li>
+            <li>Be specific about what food you want</li>
+            <li>Try phrases like "I want a burger with cheese" or "Order pizza with pepperoni"</li>
+        </ul>
+    </div>
 </header>
 
 <main>
@@ -202,6 +310,30 @@
             <strong>AI Recommendation:</strong>
             <p id="recommendationText"></p>
             <div id="dietaryBadges" class="dietary-badges hidden"></div>
+        </div>
+
+        <div id="fallbackOptions" class="fallback-options hidden">
+            <h3>Popular Categories</h3>
+            <div class="category-buttons">
+                <button class="category-btn" data-category="burger">Burgers</button>
+                <button class="category-btn" data-category="pizza">Pizza</button>
+                <button class="category-btn" data-category="vegetarian">Vegetarian</button>
+                <button class="category-btn" data-category="chicken">Chicken</button>
+                <button class="category-btn" data-category="dessert">Desserts</button>
+                <button class="category-btn" data-category="drinks">Drinks</button>
+            </div>
+            <div class="text-input-container">
+                <input type="text" id="manualTextInput" placeholder="Or type your order here...">
+                <button id="manualSubmitButton">Search</button>
+            </div>
+            <div class="retry-container" style="margin-top: 1rem; text-align: center;">
+                <button id="retryVoiceButton" style="background-color: #4CAF50; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">
+                    🎤 Try Voice Again
+                </button>
+                <p style="font-size: 0.85rem; margin-top: 0.5rem; color: #666;">
+                    Tip: Speak clearly, reduce background noise, and hold the device closer.
+                </p>
+            </div>
         </div>
 
         <div id="productsContainer" class="product-list"></div>
@@ -226,9 +358,32 @@
     const recommendationContainer = document.getElementById('recommendationContainer');
     const productsContainer = document.getElementById('productsContainer');
     const dietaryBadges = document.getElementById('dietaryBadges');
+    const recordingTips = document.getElementById('recordingTips');
 
     micButton.addEventListener('click', toggleRecording);
-
+    
+    // Add event listener for retry button
+    document.getElementById('retryVoiceButton').addEventListener('click', function() {
+        document.getElementById('fallbackOptions').classList.add('hidden');
+        startRecording();
+    });
+    
+    // Add event listeners for category buttons
+    document.querySelectorAll('.category-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const category = this.dataset.category;
+            searchByCategory(category);
+        });
+    });
+    
+    // Add event listener for manual text search
+    document.getElementById('manualSubmitButton').addEventListener('click', function() {
+        const text = document.getElementById('manualTextInput').value.trim();
+        if (text) {
+            searchByText(text);
+        }
+    });
+    
     function toggleRecording() {
         isRecording ? stopRecording() : startRecording();
     }
@@ -286,6 +441,9 @@
             dietaryBadges.classList.add('hidden');
             productsContainer.innerHTML = '';
             
+            // Show recording tips
+            recordingTips.classList.remove('hidden');
+            
             // Determine supported MIME type
             let mimeType = 'audio/webm;codecs=opus';
             if (!MediaRecorder.isTypeSupported(mimeType)) {
@@ -298,19 +456,22 @@
                 }
             }
             
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: {
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+              audio: {
                 sampleRate: 16000,
                 channelCount: 1,
                 echoCancellation: true,
-                noiseSuppression: true
-            }});
+                noiseSuppression: true,
+                autoGainControl: true
+              } 
+            });
             
             const options = {
-                audioBitsPerSecond: 16000
+              audioBitsPerSecond: 128000  // Increased bit rate for better quality
             };
             
             if (mimeType) {
-                options.mimeType = mimeType;
+              options.mimeType = mimeType;
             }
             
             mediaRecorder = new MediaRecorder(stream, options);
@@ -337,6 +498,11 @@
         if (mediaRecorder && isRecording) {
             mediaRecorder.stop();
             isRecording = false;
+            
+            // Stop all tracks in the stream to release microphone
+            if (mediaRecorder.stream) {
+                mediaRecorder.stream.getTracks().forEach(track => track.stop());
+            }
             
             micButton.classList.remove('recording');
             recordingStatus.textContent = 'Processing...';
@@ -440,19 +606,63 @@
             const data = await response.json();
 
             if (data.success) {
-                // Display transcription
+                // Hide recording tips when we have results
+                recordingTips.classList.add('hidden');
+                
+                // Display transcription even if confidence is low
                 transcriptionText.textContent = data.transcription || data.text || 'N/A';
                 transcriptionContainer.classList.remove('hidden');
                 
-                // Display recommendation
-                if (data.recommendation_text) {
-                    recommendationText.textContent = data.recommendation_text;
+                // Add confidence indicator if available
+                if (data.confidence_score !== undefined) {
+                    const confidenceEl = displayConfidence(data.confidence_score);
+                    transcriptionContainer.appendChild(confidenceEl);
+                    
+                    // If confidence is low, show a hint to the user
+                    if (data.confidence_score < 0.7) {
+                        const hint = document.createElement('p');
+                        hint.innerHTML = '<small style="color:#ff6b6b">Tip: Speak clearly and reduce background noise for better results.</small>';
+                        transcriptionContainer.appendChild(hint);
+                    }
+                }
+                
+                // Weigh recommendations based on confidence before displaying
+                const confidenceScore = data.confidence_score !== undefined ? data.confidence_score : 0.5;
+                const fallbackOptions = document.getElementById('fallbackOptions');
+                
+                // Handle based on confidence tiers
+                if (confidenceScore < 0.4) {
+                    // Very low confidence - show fallback UI
+                    fallbackOptions.classList.remove('hidden');
+                    recommendationText.textContent = "I couldn't clearly understand your request. Please try speaking more clearly, or use one of the options below.";
                     recommendationContainer.classList.remove('hidden');
-                } else if (data.openai_analysis) {
-                    // Handle test API format
-                    const messageContent = data.openai_analysis.choices[0].message.content;
-                    recommendationText.textContent = messageContent;
-                    recommendationContainer.classList.remove('hidden');
+                } else if (confidenceScore < 0.7) {
+                    // Medium confidence - show recommendations but with caution message
+                    if (data.recommendation_text) {
+                        recommendationText.textContent = data.recommendation_text + "\n\n(Note: I'm not completely confident I understood correctly. Please confirm if this matches your request.)";
+                        recommendationContainer.classList.remove('hidden');
+                    } else if (data.openai_analysis) {
+                        // Handle test API format
+                        const messageContent = data.openai_analysis.choices[0].message.content;
+                        recommendationText.textContent = messageContent + "\n\n(Note: I'm not completely confident I understood correctly. Please confirm if this matches your request.)";
+                        recommendationContainer.classList.remove('hidden');
+                    }
+                } else {
+                    // High confidence - show recommendations normally
+                    if (data.recommendation_text) {
+                        recommendationText.textContent = data.recommendation_text;
+                        recommendationContainer.classList.remove('hidden');
+                    } else if (data.openai_analysis) {
+                        // Handle test API format
+                        const messageContent = data.openai_analysis.choices[0].message.content;
+                        recommendationText.textContent = messageContent;
+                        recommendationContainer.classList.remove('hidden');
+                    } else {
+                        // If no recommendation is provided but we have transcription,
+                        // show a generic message
+                        recommendationText.textContent = "I understood your request but couldn't generate specific recommendations. Try being more specific about what food you're looking for.";
+                        recommendationContainer.classList.remove('hidden');
+                    }
                 }
                 
                 // Display dietary preferences if any
@@ -460,12 +670,27 @@
                     displayDietaryPreferences(data.dietary_preferences);
                 }
                 
-                // Display product recommendations
+                // Display product recommendations based on confidence score
                 if (data.recommendations && data.recommendations.length > 0) {
-                    displayProducts(data.recommendations);
+                    const confidenceScore = data.confidence_score !== undefined ? data.confidence_score : 0.5;
+                    
+                    if (confidenceScore < 0.4) {
+                        // Very low confidence - don't show potentially incorrect recommendations
+                        productsContainer.innerHTML = '<p class="text-center py-4">Could not generate reliable recommendations due to unclear audio. Please try again or use the options above.</p>';
+                    } else if (confidenceScore < 0.7) {
+                        // Medium confidence - show recommendations with disclaimer
+                        productsContainer.innerHTML = '<p style="color: #ff9800; text-align: center; margin-bottom: 1rem;">⚠️ These recommendations are based on what I think I heard. They might not be exactly what you wanted.</p>';
+                        displayProducts(data.recommendations);
+                    } else {
+                        // High confidence - show recommendations normally
+                        displayProducts(data.recommendations);
+                    }
+                } else if (data.transcription || data.text) {
+                    // If we have transcription but no recommendations, show a message
+                    productsContainer.innerHTML = '<p class="text-center py-4">No specific product recommendations found. Try being more specific about what you\'re looking for.</p>';
                 }
                 
-                statusEl.textContent = '✅ Voice order processed successfully!';
+                statusEl.textContent = '✅ Voice processed successfully!';
                 statusEl.className = 'status success';
             } else {
                 // Show specific error messages based on error type
@@ -525,11 +750,121 @@
         });
     }
     
+    function displayConfidence(score) {
+        if (score === undefined) return '';
+        
+        const confidencePercent = Math.round(score * 100);
+        const levelClass = score < 0.5 ? 'low' : score < 0.8 ? 'medium' : 'high';
+        
+        const container = document.createElement('div');
+        container.className = 'confidence-indicator';
+        
+        container.innerHTML = `
+            <span>Confidence:</span>
+            <div class="confidence-bar">
+                <div class="confidence-level ${levelClass}" style="width: ${confidencePercent}%"></div>
+            </div>
+            <span>${confidencePercent}%</span>
+        `;
+        
+        return container;
+    }
+    
     function formatPreference(pref) {
         // Convert preference_key to Preference Key format
         return pref.split('_')
             .map(word => word.charAt(0).toUpperCase() + word.slice(1))
             .join(' ');
+    }
+    
+    // Function to search by category
+    async function searchByCategory(category) {
+        statusEl.textContent = 'Searching for ' + category + '...';
+        statusEl.className = 'status';
+        
+        try {
+            const response = await fetch('/api/search/category', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    category: category,
+                    session_id: sessionId
+                }),
+                credentials: 'include'
+            });
+            
+            if (!response.ok) {
+                throw new Error('Server error: ' + response.status);
+            }
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Display recommendations without confidence warnings since this is a direct category selection
+                if (data.recommendations && data.recommendations.length > 0) {
+                    displayProducts(data.recommendations);
+                    statusEl.textContent = '✅ Found ' + data.recommendations.length + ' ' + category + ' items.';
+                    statusEl.className = 'status success';
+                } else {
+                    productsContainer.innerHTML = '<p class="text-center py-4">No items found in the ' + category + ' category.</p>';
+                    statusEl.textContent = 'No items found in the ' + category + ' category.';
+                }
+            } else {
+                statusEl.textContent = data.message || '❌ Error searching for category.';
+                statusEl.className = 'status error';
+            }
+        } catch (e) {
+            console.error('Error searching by category:', e);
+            statusEl.textContent = '❌ Error: ' + e.message;
+            statusEl.className = 'status error';
+        }
+    }
+    
+    // Function to search by text input
+    async function searchByText(text) {
+        statusEl.textContent = 'Searching for "' + text + '"...';
+        statusEl.className = 'status';
+        
+        try {
+            const response = await fetch('/api/search/text', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    query: text,
+                    session_id: sessionId
+                }),
+                credentials: 'include'
+            });
+            
+            if (!response.ok) {
+                throw new Error('Server error: ' + response.status);
+            }
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Update UI with text search results
+                if (data.recommendations && data.recommendations.length > 0) {
+                    displayProducts(data.recommendations);
+                    statusEl.textContent = '✅ Found ' + data.recommendations.length + ' items matching "' + text + '".';
+                    statusEl.className = 'status success';
+                } else {
+                    productsContainer.innerHTML = '<p class="text-center py-4">No items found matching "' + text + '".</p>';
+                    statusEl.textContent = 'No items found matching "' + text + '".';
+                }
+            } else {
+                statusEl.textContent = data.message || '❌ Error searching for text.';
+                statusEl.className = 'status error';
+            }
+        } catch (e) {
+            console.error('Error searching by text:', e);
+            statusEl.textContent = '❌ Error: ' + e.message;
+            statusEl.className = 'status error';
+        }
     }
 </script>
 
