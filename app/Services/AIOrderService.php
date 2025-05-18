@@ -17,29 +17,42 @@ class AIOrderService
 
     public function __construct()
     {
-        $apiKey = config('services.openai.api_key');
-        
-        if (!empty($apiKey)) {
-            try {
-                $this->openAi = new OpenAi($apiKey);
-                $this->apiInitialized = true;
-                Log::info('OpenAI client initialized successfully with API key: ' . substr($apiKey, 0, 5) . '...');
-            } catch (\Exception $e) {
-                Log::error('Failed to initialize OpenAI client: ' . $e->getMessage(), [
-                    'exception' => get_class($e),
-                    'trace' => $e->getTraceAsString(),
-                    'api_key_length' => strlen($apiKey)
-                ]);
-                $this->apiInitialized = false;
+        $this->initializeOpenAI();
+    }
+
+    /**
+     * Initialize the OpenAI API client
+     */
+    private function initializeOpenAI()
+    {
+        // Only initialize once
+        if ($this->apiInitialized) {
+            return;
+        }
+
+        try {
+            // First try the config value
+            $apiKey = config('services.openai.api_key');
+            
+            // If that's empty, try the environment directly
+            if (empty($apiKey)) {
+                $apiKey = getenv('OPENAI_API_KEY');
             }
-        } else {
-            Log::error('OpenAI API key is empty or not set in configuration', [
-                'api_key_from_env' => !empty(env('OPENAI_API_KEY')) ? 'Set (length: ' . strlen(env('OPENAI_API_KEY')) . ')' : 'Not set',
-                'api_key_from_config' => 'Not set',
-                'services_config_exists' => !empty(config('services')) ? 'Yes' : 'No',
-                'openai_config_exists' => !empty(config('services.openai')) ? 'Yes' : 'No'
-            ]);
-            $this->apiInitialized = false;
+            
+            // Check if we have a key at all
+            if (empty($apiKey)) {
+                Log::error('OpenAI API key not found in config or environment');
+                throw new \Exception('OpenAI API key not configured. Please check .env or .env.local file.');
+            }
+
+            // Initialize the client
+            $this->openAi = new OpenAi($apiKey);
+            $this->apiInitialized = true;
+            
+            Log::info('OpenAI API initialized successfully');
+        } catch (\Exception $e) {
+            Log::error('Failed to initialize OpenAI API: ' . $e->getMessage());
+            throw $e;
         }
     }
 

@@ -24,16 +24,21 @@ Instead of building a separate voice ordering system, we'll:
 
 Your backend already provides these key endpoints for voice processing:
 
+### Voice Order Endpoints
+
 | Endpoint | Method | Description | Authentication |
 |----------|--------|-------------|----------------|
 | `/api/v1/voice-order` | POST | Process voice recordings for order intent | Optional |
-| `/api/v1/voice-order/repeat` | POST | Repeat a previous order | Required |
-| `/api/v1/voice-order/realtime-transcription` | POST | Process streaming audio | Required |
 | `/api/v1/voice-order/feedback` | POST | Submit feedback on order recommendations | Required |
 | `/api/v1/voice-order/history` | GET | Get user's voice order history | Required |
+| `/api/v1/voice-order/log/{id}` | GET | Get details of a specific voice order log | Required |
+| `/api/v1/voice-order/realtime-transcription` | POST | Process streaming audio | Required |
+| `/api/v1/voice-order/repeat` | POST | Repeat a previous order | Required |
 | `/api/v1/voice-order/test-transcribe` | POST | Test speech-to-text without AI processing | None |
+| `/api/v1/voice-order/transcribe` | POST | Transcribe audio to text | Required |
+| `/api/v1/test-openai-key` | POST | Test OpenAI API key configuration | None |
 
-For text chat processing, we'll add:
+### Text Chat Endpoints
 
 | Endpoint | Method | Description | Authentication |
 |----------|--------|-------------|----------------|
@@ -55,7 +60,7 @@ npm install axios react-use-clipboard react-icons
 Create `.env.local` file:
 
 ```
-NEXT_PUBLIC_API_URL=http://your-laravel-backend-url/api/v1
+NEXT_PUBLIC_API_URL=http://mapi.jumlajumla.com/api/v1
 ```
 
 ### 3. Hybrid Voice + Chat Component

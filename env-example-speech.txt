@@ -1,0 +1,13 @@
+# Google Cloud Speech API Configuration
+# See GOOGLE_CLOUD_SETUP.md for detailed instructions
+
+# Absolute path to your Google Cloud credentials JSON file
+GOOGLE_APPLICATION_CREDENTIALS="/absolute/path/to/your-google-credentials.json"
+
+# Your Google Cloud project ID (found in your Google Cloud Console)
+GOOGLE_CLOUD_PROJECT_ID="your-project-id"
+
+# OpenAI Configuration for AI processing
+OPENAI_API_KEY="your-openai-api-key"
+OPENAI_MODEL="gpt-3.5-turbo"
+OPENAI_TEMPERATURE=0.7 

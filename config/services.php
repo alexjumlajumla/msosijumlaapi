@@ -17,7 +17,30 @@ return [
     ],
 
     'google' => [
-        'credentials' => env('GOOGLE_APPLICATION_CREDENTIALS'),
+        // Try the environment variable first
+        'credentials' => function() {
+            $primaryPath = env('GOOGLE_APPLICATION_CREDENTIALS');
+            $fallbackPath1 = storage_path('app/google-service-account.json');
+            $fallbackPath2 = storage_path('app/jumlajumla-1f0f0-98ab02854aef.json');
+            
+            // Check if the primary path exists and is readable
+            if (!empty($primaryPath) && file_exists($primaryPath) && is_readable($primaryPath)) {
+                return $primaryPath;
+            }
+            
+            // Try the standard fallback path
+            if (file_exists($fallbackPath1) && is_readable($fallbackPath1)) {
+                return $fallbackPath1;
+            }
+            
+            // Try the specific filename fallback
+            if (file_exists($fallbackPath2) && is_readable($fallbackPath2)) {
+                return $fallbackPath2;
+            }
+            
+            // Return the environment variable as a last resort
+            return $primaryPath;
+        },
         'project_id' => env('GOOGLE_CLOUD_PROJECT_ID'),
     ],
 

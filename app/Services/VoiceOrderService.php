@@ -46,9 +46,65 @@ class VoiceOrderService
      */
     public function __construct(SpeechClient $client = null)
     {
-        $this->speechClient = $client ?? new SpeechClient([
-            'credentials' => config('services.google.credentials'),
-        ]);
+        // Try multiple paths for credentials file if none provided directly
+        if ($client === null) {
+            // Get the credentials path from config or env
+            $credentialsPath = config('services.google.credentials');
+            
+            // If it's a function (from our config update), execute it
+            if (is_callable($credentialsPath)) {
+                $credentialsPath = $credentialsPath();
+            }
+            
+            // Check standard paths if still not found
+            if (empty($credentialsPath) || !file_exists($credentialsPath)) {
+                $possiblePaths = [
+                    storage_path('app/google-service-account.json'),
+                    storage_path('app/jumlajumla-1f0f0-98ab02854aef.json'),
+                    base_path('google-credentials.json')
+                ];
+                
+                foreach ($possiblePaths as $path) {
+                    if (file_exists($path) && is_readable($path)) {
+                        $credentialsPath = $path;
+                        \Log::info("Using fallback Google credentials file: $path");
+                        break;
+                    }
+                }
+            }
+            
+            try {
+                // If we found a valid file, use its contents directly
+                if (!empty($credentialsPath) && file_exists($credentialsPath)) {
+                    $credentials = json_decode(file_get_contents($credentialsPath), true);
+                    if (json_last_error() === JSON_ERROR_NONE) {
+                        $this->speechClient = new SpeechClient([
+                            'credentials' => $credentials
+                        ]);
+                        \Log::info("Successfully loaded Google credentials file directly");
+                    } else {
+                        // Fall back to path-based config if JSON parsing fails
+                        $this->speechClient = new SpeechClient([
+                            'credentials' => $credentialsPath
+                        ]);
+                        \Log::info("Using credentials path: $credentialsPath");
+                    }
+                } else {
+                    // Last resort - try to use ADC without explicit path
+                    $this->speechClient = new SpeechClient();
+                    \Log::info("Using application default credentials without explicit path");
+                }
+            } catch (\Exception $e) {
+                \Log::error("Failed to initialize SpeechClient: " . $e->getMessage(), [
+                    'credentials_path' => $credentialsPath ?? 'Not set',
+                    'file_exists' => $credentialsPath ? file_exists($credentialsPath) : false,
+                    'is_readable' => $credentialsPath ? is_readable($credentialsPath) : false
+                ]);
+                throw $e; // Re-throw to maintain original behavior
+            }
+        } else {
+            $this->speechClient = $client;
+        }
         
         // Define supported languages for the voice recognition system
         $this->supportedLanguages = [

@@ -8,6 +8,7 @@ use App\Models\Page;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\VoiceOrderController;
 use App\Http\Controllers\OpenAITestController;
+use App\Http\Controllers\AIChatController;
 
 /*
 |--------------------------------------------------------------------------
@@ -1933,4 +1934,22 @@ Route::get('/test-ai-order-service', function() {
             'trace' => explode("\n", $e->getTraceAsString())
         ], 500);
     }
+});
+
+// Voice Order system endpoints
+Route::prefix('v1')->group(function () {
+    // Existing voice order routes
+    Route::post('/voice-order', [VoiceOrderController::class, 'processVoiceOrder']);
+    Route::post('/voice-order/test-transcribe', [VoiceOrderController::class, 'testTranscribe']);
+    Route::post('/voice-order/transcribe', [VoiceOrderController::class, 'transcribe']);
+    Route::post('/voice-order/realtime-transcription', [VoiceOrderController::class, 'realtimeTranscription'])->middleware('auth:sanctum');
+    Route::post('/voice-order/repeat', [VoiceOrderController::class, 'repeatOrder'])->middleware('auth:sanctum');
+    Route::post('/voice-order/feedback', [VoiceOrderController::class, 'processFeedback'])->middleware('auth:sanctum');
+    Route::get('/voice-order/history', [VoiceOrderController::class, 'getOrderHistory'])->middleware('auth:sanctum');
+    Route::get('/voice-order/log/{id}', [VoiceOrderController::class, 'getVoiceLog'])->middleware('auth:sanctum');
+    Route::post('/test-openai-key', [VoiceOrderController::class, 'testOpenAIKey']);
+    
+    // New AI Chat endpoints
+    Route::post('/ai-chat', [AIChatController::class, 'processTextOrder']);
+    Route::post('/ai-chat/context', [AIChatController::class, 'updateContext'])->middleware('auth:sanctum');
 });
