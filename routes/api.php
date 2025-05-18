@@ -1953,3 +1953,16 @@ Route::prefix('v1')->group(function () {
     Route::post('/ai-chat', [AIChatController::class, 'processTextOrder']);
     Route::post('/ai-chat/context', [AIChatController::class, 'updateContext'])->middleware('auth:sanctum');
 });
+
+/*
+|--------------------------------------------------------------------------
+| Voice Dialogue API Routes
+|--------------------------------------------------------------------------
+*/
+Route::prefix('voice-dialogue')->group(function () {
+    Route::post('/process', 'App\Http\Controllers\API\VoiceDialogueController@processVoiceCommand');
+    Route::get('/payment-methods', 'App\Http\Controllers\API\VoiceDialogueController@getPaymentMethods');
+    Route::get('/currencies', 'App\Http\Controllers\API\VoiceDialogueController@getCurrencies');
+    Route::get('/cart', 'App\Http\Controllers\API\VoiceDialogueController@getCart');
+    Route::post('/reset', 'App\Http\Controllers\API\VoiceDialogueController@resetDialogue');
+});
